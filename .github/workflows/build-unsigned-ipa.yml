@@ -48,15 +48,19 @@ jobs:
           fi
           pod --version
 
-      - name: Cache CocoaPods
+      - name: Cache CocoaPods download cache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/Library/Caches/CocoaPods
-            packages/happy-app/ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('packages/happy-app/ios/Podfile.lock') }}
+          path: ~/Library/Caches/CocoaPods
+          key: ${{ runner.os }}-cocoapods-cache-${{ hashFiles('packages/happy-app/ios/Podfile.lock') }}
           restore-keys: |
-            ${{ runner.os }}-pods-
+            ${{ runner.os }}-cocoapods-cache-
+
+      - name: Cache iOS Pods directory
+        uses: actions/cache@v4
+        with:
+          path: packages/happy-app/ios/Pods
+          key: ${{ runner.os }}-pods-dir-${{ hashFiles('packages/happy-app/ios/Podfile.lock') }}
 
       - name: Install iOS Pods
         run: |
@@ -66,7 +70,14 @@ jobs:
             pod install --verbose || {
               echo "pod install failed, trying pod repo update as last resort..."
               pod repo update
-              pod install --verbose
+              pod install --verbose || {
+                echo "pod install still failing, attempting RevenueCat pod reconciliation..."
+                pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update --verbose || {
+                  echo "RevenueCat reconciliation failed, clearing local Pods directory and retrying once..."
+                  rm -rf Pods
+                  pod install --repo-update --verbose
+                }
+              }
             }
           }
 
