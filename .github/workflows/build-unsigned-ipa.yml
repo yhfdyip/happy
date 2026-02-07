@@ -43,7 +43,10 @@ jobs:
       - name: Install iOS Pods
         run: |
           cd packages/happy-app/ios
-          pod install --repo-update --verbose
+          pod install --repo-update --verbose || {
+            echo "pod install failed, attempting RevenueCat pod lockfile reconciliation..."
+            pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update --verbose
+          }
 
       - name: Build iOS archive (unsigned)
         run: |
