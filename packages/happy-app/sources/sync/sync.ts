@@ -39,6 +39,7 @@ import { fetchFeed } from './apiFeed';
 import { FeedItem } from './feedTypes';
 import { UserProfile } from './friendTypes';
 import { initializeTodoSync } from '../-zen/model/ops';
+import { MessageAttachment } from './typesMessageMeta';
 
 class Sync {
     // Spawned agents (especially in spawn mode) can take noticeable time to connect.
@@ -207,7 +208,7 @@ class Sync {
     }
 
 
-    async sendMessage(sessionId: string, text: string, displayText?: string) {
+    async sendMessage(sessionId: string, text: string, displayText?: string, attachments?: MessageAttachment[]) {
 
         // Get encryption
         const encryption = this.encryption.getSessionEncryption(sessionId);
@@ -272,6 +273,7 @@ class Sync {
                 model,
                 fallbackModel,
                 appendSystemPrompt: systemPrompt,
+                ...(attachments && attachments.length > 0 && { attachments }),
                 ...(displayText && { displayText }) // Add displayText if provided
             }
         };

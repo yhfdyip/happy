@@ -4,6 +4,7 @@
 
 export interface CodexSessionConfig {
     prompt: string;
+    images?: string[];
     'approval-policy'?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
     'base-instructions'?: string;
     config?: Record<string, any>;

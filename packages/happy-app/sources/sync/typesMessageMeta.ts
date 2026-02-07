@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+export const MessageAttachmentSchema = z.object({
+    type: z.literal('image'),
+    path: z.string(),
+    mimeType: z.string().optional(),
+});
+
 // Shared message metadata schema
 export const MessageMetaSchema = z.object({
     sentFrom: z.string().optional(), // Source identifier
@@ -10,7 +16,9 @@ export const MessageMetaSchema = z.object({
     appendSystemPrompt: z.string().nullable().optional(), // Append to system prompt for this message (null = reset)
     allowedTools: z.array(z.string()).nullable().optional(), // Allowed tools for this message (null = reset)
     disallowedTools: z.array(z.string()).nullable().optional(), // Disallowed tools for this message (null = reset)
+    attachments: z.array(MessageAttachmentSchema).optional(), // Optional multimodal attachments for this message
     displayText: z.string().optional() // Optional text to display in UI instead of actual message text
 });
 
 export type MessageMeta = z.infer<typeof MessageMetaSchema>;
+export type MessageAttachment = z.infer<typeof MessageAttachmentSchema>;

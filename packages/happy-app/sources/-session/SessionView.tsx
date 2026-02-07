@@ -272,15 +272,24 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
             }
 
             const instruction = userPrompt.trim()
-                ? `我上传了一张图片到工作目录：${uploadPath}\n\n请把它作为图片输入来分析：\n${userPrompt.trim()}`
-                : `我上传了一张图片到工作目录：${uploadPath}\n\n请把它作为图片输入来分析并描述其内容。`;
+                ? userPrompt.trim()
+                : '请分析这张图片并描述其关键信息。';
+
+            const displayText = userPrompt.trim()
+                ? `📷 已发送 1 张图片\n${userPrompt.trim()}`
+                : '📷 已发送 1 张图片';
 
             if (message.trim()) {
                 setMessage('');
                 clearDraft();
             }
 
-            await sync.sendMessage(sessionId, instruction);
+            await sync.sendMessage(
+                sessionId,
+                instruction,
+                displayText,
+                [{ type: 'image', path: uploadPath, mimeType: 'image/jpeg' }]
+            );
             trackMessageSent();
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);

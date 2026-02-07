@@ -200,7 +200,7 @@ export class CodexMcpClient {
         return response as CodexToolResponse;
     }
 
-    async continueSession(prompt: string, options?: { signal?: AbortSignal }): Promise<CodexToolResponse> {
+    async continueSession(prompt: string, options?: { signal?: AbortSignal; images?: string[] }): Promise<CodexToolResponse> {
         if (!this.connected) await this.connect();
 
         if (!this.sessionId) {
@@ -213,7 +213,12 @@ export class CodexMcpClient {
             logger.debug('[CodexMCP] conversationId missing, defaulting to sessionId:', this.conversationId);
         }
 
-        const args = { sessionId: this.sessionId, conversationId: this.conversationId, prompt };
+        const args = {
+            sessionId: this.sessionId,
+            conversationId: this.conversationId,
+            prompt,
+            ...(options?.images && options.images.length > 0 ? { images: options.images } : {})
+        };
         logger.debug('[CodexMCP] Continuing Codex session:', args);
 
         const response = await this.client.callTool({

@@ -69,10 +69,20 @@ export async function runCodex(opts: {
 }): Promise<void> {
     // Use shared PermissionMode type for cross-agent compatibility
     type PermissionMode = import('@/api/types').PermissionMode;
+    type ImageAttachment = {
+        type: 'image';
+        path: string;
+        mimeType?: string;
+    };
     interface EnhancedMode {
         permissionMode: PermissionMode;
         model?: string;
     }
+    type QueuedCodexMessage = {
+        message: string;
+        images: string[];
+        fallbackImageWrappedPrompt: string;
+    };
 
     //
     // Define session
@@ -186,7 +196,22 @@ export async function runCodex(opts: {
             permissionMode: messagePermissionMode || 'default',
             model: messageModel,
         };
-        messageQueue.push(message.content.text, enhancedMode);
+        const attachments = message.meta?.attachments || [];
+        const imageAttachments = attachments
+            .filter((item): item is ImageAttachment => item?.type === 'image' && typeof item.path === 'string' && item.path.length > 0);
+
+        const imagePaths = imageAttachments.map((item) => item.path);
+        const fallbackImageWrappedPrompt = imagePaths.length > 0
+            ? `${imagePaths.map((path) => `<image>${path}</image>`).join('\n')}\n${message.content.text}`
+            : message.content.text;
+
+        const queuedMessage: QueuedCodexMessage = {
+            message: message.content.text,
+            images: imagePaths,
+            fallbackImageWrappedPrompt
+        };
+
+        messageQueue.push(JSON.stringify(queuedMessage), enhancedMode);
     });
     let thinking = false;
     session.keepAlive(thinking, 'remote');
@@ -595,6 +620,48 @@ export async function runCodex(opts: {
                 break;
             }
 
+            let parsedPayload: QueuedCodexMessage = {
+                message: message.message,
+                images: [],
+                fallbackImageWrappedPrompt: message.message
+            };
+            const rawItems = message.message.split('\n');
+            const parsedItems: QueuedCodexMessage[] = [];
+            let canParseAllItems = rawItems.length > 0;
+
+            for (const item of rawItems) {
+                try {
+                    const candidate = JSON.parse(item);
+                    if (
+                        !candidate
+                        || typeof candidate !== 'object'
+                        || typeof candidate.message !== 'string'
+                        || !Array.isArray(candidate.images)
+                        || typeof candidate.fallbackImageWrappedPrompt !== 'string'
+                    ) {
+                        canParseAllItems = false;
+                        break;
+                    }
+
+                    parsedItems.push({
+                        message: candidate.message,
+                        images: candidate.images.filter((value: unknown): value is string => typeof value === 'string' && value.length > 0),
+                        fallbackImageWrappedPrompt: candidate.fallbackImageWrappedPrompt
+                    });
+                } catch {
+                    canParseAllItems = false;
+                    break;
+                }
+            }
+
+            if (canParseAllItems && parsedItems.length > 0) {
+                parsedPayload = {
+                    message: parsedItems.map((item) => item.message).join('\n'),
+                    images: [...new Set(parsedItems.flatMap((item) => item.images))],
+                    fallbackImageWrappedPrompt: parsedItems.map((item) => item.fallbackImageWrappedPrompt).join('\n')
+                };
+            }
+
             // If a session exists and mode changed, restart on next iteration
             if (wasCreated && currentModeHash && message.hash !== currentModeHash) {
                 logger.debug('[Codex] Mode changed – restarting Codex session');
@@ -627,7 +694,7 @@ export async function runCodex(opts: {
             }
 
             // Display user messages in the UI
-            messageBuffer.addMessage(message.message, 'user');
+            messageBuffer.addMessage(parsedPayload.message, 'user');
             currentModeHash = message.hash;
 
             try {
@@ -663,11 +730,14 @@ export async function runCodex(opts: {
 
                 if (!wasCreated) {
                     const startConfig: CodexSessionConfig = {
-                        prompt: first ? message.message + '\n\n' + CHANGE_TITLE_INSTRUCTION : message.message,
+                        prompt: first ? parsedPayload.message + '\n\n' + CHANGE_TITLE_INSTRUCTION : parsedPayload.message,
                         sandbox,
                         'approval-policy': approvalPolicy,
                         config: { mcp_servers: mcpServers }
                     };
+                    if (parsedPayload.images.length > 0) {
+                        startConfig.images = parsedPayload.images;
+                    }
                     if (message.mode.model) {
                         startConfig.model = message.mode.model;
                     }
@@ -697,15 +767,37 @@ export async function runCodex(opts: {
                         (startConfig.config as any).experimental_resume = resumeFile;
                     }
                     
-                    await client.startSession(
-                        startConfig,
-                        { signal: abortController.signal }
-                    );
+                    try {
+                        await client.startSession(
+                            startConfig,
+                            { signal: abortController.signal }
+                        );
+                    } catch (error) {
+                        if (parsedPayload.images.length > 0) {
+                            logger.debug('[Codex] startSession with images failed, retrying with prompt-only <image> fallback', error);
+                            const fallbackStartConfig: CodexSessionConfig = {
+                                ...startConfig,
+                                prompt: first
+                                    ? parsedPayload.fallbackImageWrappedPrompt + '\n\n' + CHANGE_TITLE_INSTRUCTION
+                                    : parsedPayload.fallbackImageWrappedPrompt
+                            };
+                            delete fallbackStartConfig.images;
+                            await client.startSession(
+                                fallbackStartConfig,
+                                { signal: abortController.signal }
+                            );
+                        } else {
+                            throw error;
+                        }
+                    }
                     wasCreated = true;
                     first = false;
                 } else {
-                    const response = await client.continueSession(
-                        message.message,
+                    const continuePrompt = parsedPayload.images.length > 0
+                        ? parsedPayload.fallbackImageWrappedPrompt
+                        : parsedPayload.message;
+                    const response: Awaited<ReturnType<CodexMcpClient['continueSession']>> = await client.continueSession(
+                        continuePrompt,
                         { signal: abortController.signal }
                     );
                     logger.debug('[Codex] continueSession response:', response);
