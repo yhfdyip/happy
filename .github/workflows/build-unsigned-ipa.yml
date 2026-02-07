@@ -13,6 +13,8 @@ jobs:
   build-unsigned-ipa:
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      COCOAPODS_DISABLE_STATS: 'true'
 
     steps:
       - name: Checkout code
@@ -25,13 +27,23 @@ jobs:
           cache: yarn
           cache-dependency-path: yarn.lock
 
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Install CocoaPods
+      - name: Install CocoaPods CLI
+        run: |
+          gem install cocoapods --no-document
+          pod --version
+
+      - name: Install iOS Pods
         run: |
           cd packages/happy-app/ios
-          pod install
+          pod install --repo-update --verbose
 
       - name: Build iOS archive (unsigned)
         run: |
