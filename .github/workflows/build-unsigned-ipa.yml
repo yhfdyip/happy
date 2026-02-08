@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-unsigned-ipa:
-    runs-on: macos-latest-xlarge
+    runs-on: macos-14
     timeout-minutes: 60
     env:
       COCOAPODS_DISABLE_STATS: 'true'
