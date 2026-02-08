@@ -59,6 +59,7 @@ export const pt: TranslationStructure = {
         loading: 'Carregando...',
         retry: 'Tentar novamente',
         delete: 'Excluir',
+        send: 'Enviar',
         optional: 'Opcional',
     },
 

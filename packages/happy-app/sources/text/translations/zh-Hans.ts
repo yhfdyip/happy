@@ -61,6 +61,7 @@ export const zhHans: TranslationStructure = {
         loading: '加载中...',
         retry: '重试',
         delete: '删除',
+        send: '发送',
         optional: '可选的',
     },
 

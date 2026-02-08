@@ -61,6 +61,7 @@ export const ja: TranslationStructure = {
         loading: '読み込み中...',
         retry: '再試行',
         delete: '削除',
+        send: '送信',
         optional: '任意',
         saveAs: '名前を付けて保存',
     },

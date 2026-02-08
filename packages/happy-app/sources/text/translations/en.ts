@@ -74,6 +74,7 @@ export const en: TranslationStructure = {
         loading: 'Loading...',
         retry: 'Retry',
         delete: 'Delete',
+        send: 'Send',
         optional: 'optional',
     },
 

@@ -170,16 +170,16 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const shouldShowCliWarning = isCliOutdated && !isAcknowledged;
     // Get permission mode from session object, default to 'default'
     const permissionMode = session.permissionMode || 'default';
-    // Get model mode from session object - for Gemini sessions use explicit model, default to gemini-2.5-pro
-    const isGeminiSession = session.metadata?.flavor === 'gemini';
-    const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : 'default');
+    // Get model mode from session object - Gemini/Codex sessions use explicit model defaults
+    const flavor = session.metadata?.flavor;
+    const isGeminiSession = flavor === 'gemini';
+    const isCodexSession = flavor === 'codex';
+    const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : isCodexSession ? 'gpt-5-codex-high' : 'default');
     const sessionStatus = useSessionStatus(session);
     const sessionUsage = useSessionUsage(sessionId);
     const alwaysShowContextSize = useSetting('alwaysShowContextSize');
     const experiments = useSetting('experiments');
     const [isPickingImage, setIsPickingImage] = React.useState(false);
-
-    const isCodexSession = session.metadata?.flavor === 'codex';
 
     // Use draft hook for auto-saving message drafts
     const { clearDraft } = useDraft(sessionId, message, setMessage);
@@ -316,8 +316,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         storage.getState().updateSessionPermissionMode(sessionId, mode);
     }, [sessionId]);
 
-    // Function to update model mode (for Gemini sessions)
-    const updateModelMode = React.useCallback((mode: 'default' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite') => {
+    // Function to update model mode
+    const updateModelMode = React.useCallback((mode: 'default' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite') => {
         storage.getState().updateSessionModelMode(sessionId, mode);
     }, [sessionId]);
 

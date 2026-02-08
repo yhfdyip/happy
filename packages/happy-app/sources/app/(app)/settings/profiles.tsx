@@ -429,7 +429,8 @@ const profileManagerStyles = StyleSheet.create((theme) => ({
     modalContent: {
         width: '100%',
         maxWidth: Math.min(layout.maxWidth, 600),
-        maxHeight: '90%',
+        height: '90%',
+        minHeight: 320,
     },
 }));
 

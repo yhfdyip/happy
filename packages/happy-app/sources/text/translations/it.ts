@@ -58,6 +58,7 @@ export const it: TranslationStructure = {
         loading: 'Caricamento...',
         retry: 'Riprova',
         delete: 'Elimina',
+        send: 'Invia',
         optional: 'opzionale',
         saveAs: 'Salva con nome',
     },

@@ -227,10 +227,11 @@ class Sync {
         // Read permission mode from session state
         const permissionMode = session.permissionMode || 'default';
         
-        // Read model mode - for Gemini, default to gemini-2.5-pro if not set
+        // Read model mode - for Gemini/Codex, default to explicit model if not set
         const flavor = session.metadata?.flavor;
         const isGemini = flavor === 'gemini';
-        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : 'default');
+        const isCodex = flavor === 'codex';
+        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : isCodex ? 'gpt-5-codex-high' : 'default');
 
         // Generate local ID
         const localId = randomUUID();
@@ -252,10 +253,10 @@ class Sync {
             sentFrom = 'web'; // fallback
         }
 
-        // Model settings - for Gemini, we pass the selected model; for others, CLI handles it
+        // Model settings - for Gemini/Codex, pass selected model; for others, CLI handles it
         let model: string | null = null;
-        if (isGemini && modelMode !== 'default') {
-            // For Gemini ACP, pass the selected model to CLI
+        if ((isGemini || isCodex) && modelMode !== 'default') {
+            // For Gemini ACP and Codex, pass the selected model to CLI
             model = modelMode;
         }
         const fallbackModel: string | null = null;

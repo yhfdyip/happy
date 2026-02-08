@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 60
     env:
       COCOAPODS_DISABLE_STATS: 'true'
+      SPM_CACHE_PATH: ~/Library/Developer/Xcode/DerivedData/SourcePackages
 
     steps:
       - name: Checkout code
@@ -39,7 +40,7 @@ jobs:
           ruby-version: '3.2'
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --prefer-offline
 
       - name: Ensure CocoaPods CLI
         run: |
@@ -62,20 +63,30 @@ jobs:
           path: packages/happy-app/ios/Pods
           key: ${{ runner.os }}-pods-dir-${{ hashFiles('packages/happy-app/ios/Podfile.lock') }}
 
+      - name: Cache Swift Package Manager artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ${{ env.SPM_CACHE_PATH }}
+          key: ${{ runner.os }}-spm-${{ hashFiles('packages/happy-app/ios/Happydev.xcodeproj/project.pbxproj', 'packages/happy-app/ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Install iOS Pods
         run: |
           cd packages/happy-app/ios
-          pod install --deployment --verbose || {
+          pod install --deployment || {
             echo "pod install --deployment failed, retrying without deployment..."
-            pod install --verbose || {
+            pod install || {
               echo "pod install failed, trying pod repo update as last resort..."
               pod repo update
-              pod install --verbose || {
+              pod install || {
                 echo "pod install still failing, attempting RevenueCat pod reconciliation..."
-                pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update --verbose || {
+                pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update || {
                   echo "RevenueCat reconciliation failed, clearing local Pods directory and retrying once..."
                   rm -rf Pods
-                  pod install --repo-update --verbose
+                  pod install --repo-update
                 }
               }
             }
@@ -84,6 +95,7 @@ jobs:
       - name: Build iOS archive (unsigned)
         run: |
           cd packages/happy-app/ios
+          mkdir -p "$SPM_CACHE_PATH"
           xcodebuild \
             -workspace Happydev.xcworkspace \
             -scheme Happydev \
@@ -91,6 +103,7 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Happydev.xcarchive" \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_PATH" \
             -parallelizeTargets \
             -jobs "$(sysctl -n hw.ncpu)" \
             -showBuildTimingSummary \

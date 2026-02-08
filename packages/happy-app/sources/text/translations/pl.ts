@@ -70,6 +70,7 @@ export const pl: TranslationStructure = {
         loading: 'Ładowanie...',
         retry: 'Ponów',
         delete: 'Usuń',
+        send: 'Wyślij',
         optional: 'opcjonalnie',
     },
 

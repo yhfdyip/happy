@@ -59,6 +59,7 @@ export const en = {
         loading: 'Loading...',
         retry: 'Retry',
         delete: 'Delete',
+        send: 'Send',
         optional: 'optional',
     },
 

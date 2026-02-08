@@ -59,6 +59,7 @@ export const ca: TranslationStructure = {
         loading: 'Carregant...',
         retry: 'Torna-ho a provar',
         delete: 'Elimina',
+        send: 'Envia',
         optional: 'Opcional',
     },
 

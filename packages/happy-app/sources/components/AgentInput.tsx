@@ -687,6 +687,64 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                                 </Pressable>
                                             );
                                         })
+                                    ) : isCodex ? (
+                                        (['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'] as const).map((model) => {
+                                            const modelConfig = {
+                                                'gpt-5-codex-high': { label: t('agentInput.codexModel.gpt5CodexHigh') },
+                                                'gpt-5-codex-medium': { label: t('agentInput.codexModel.gpt5CodexMedium') },
+                                                'gpt-5-codex-low': { label: t('agentInput.codexModel.gpt5CodexLow') },
+                                                'gpt-5-minimal': { label: t('agentInput.codexModel.gpt5Minimal') },
+                                                'gpt-5-low': { label: t('agentInput.codexModel.gpt5Low') },
+                                                'gpt-5-medium': { label: t('agentInput.codexModel.gpt5Medium') },
+                                                'gpt-5-high': { label: t('agentInput.codexModel.gpt5High') },
+                                            };
+                                            const config = modelConfig[model];
+                                            const isSelected = props.modelMode === model;
+
+                                            return (
+                                                <Pressable
+                                                    key={model}
+                                                    onPress={() => {
+                                                        hapticsLight();
+                                                        props.onModelModeChange?.(model);
+                                                    }}
+                                                    style={({ pressed }) => ({
+                                                        flexDirection: 'row',
+                                                        alignItems: 'center',
+                                                        paddingHorizontal: 16,
+                                                        paddingVertical: 8,
+                                                        backgroundColor: pressed ? theme.colors.surfacePressed : 'transparent'
+                                                    })}
+                                                >
+                                                    <View style={{
+                                                        width: 16,
+                                                        height: 16,
+                                                        borderRadius: 8,
+                                                        borderWidth: 2,
+                                                        borderColor: isSelected ? theme.colors.radio.active : theme.colors.radio.inactive,
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        marginRight: 12
+                                                    }}>
+                                                        {isSelected && (
+                                                            <View style={{
+                                                                width: 6,
+                                                                height: 6,
+                                                                borderRadius: 3,
+                                                                backgroundColor: theme.colors.radio.dot
+                                                            }} />
+                                                        )}
+                                                    </View>
+                                                    <Text style={{
+                                                        fontSize: 14,
+                                                        color: isSelected ? theme.colors.radio.active : theme.colors.text,
+                                                        ...Typography.default()
+                                                    }}>
+                                                        {config.label}
+                                                    </Text>
+                                                </Pressable>
+                                            );
+                                        })
                                     ) : (
                                         <Text style={{
                                             fontSize: 13,

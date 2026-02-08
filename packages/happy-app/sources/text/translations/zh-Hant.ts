@@ -61,6 +61,7 @@ export const zhHant: TranslationStructure = {
         loading: '載入中...',
         retry: '重試',
         delete: '刪除',
+        send: '傳送',
         optional: '選填',
     },
 

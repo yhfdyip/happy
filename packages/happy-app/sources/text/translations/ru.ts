@@ -70,6 +70,7 @@ export const ru: TranslationStructure = {
         loading: 'Загрузка...',
         retry: 'Повторить',
         delete: 'Удалить',
+        send: 'Отправить',
         optional: 'необязательно',
     },
 
