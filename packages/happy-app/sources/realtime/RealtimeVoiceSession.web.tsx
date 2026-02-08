@@ -1,10 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { useConversation } from '@elevenlabs/react';
 import { registerVoiceSession } from './RealtimeSession';
-import { storage } from '@/sync/storage';
+import { storage, useRealtimeMicMuted } from '@/sync/storage';
 import { realtimeClientTools } from './realtimeClientTools';
 import { getElevenLabsCodeFromPreference } from '@/constants/Languages';
 import type { VoiceSession, VoiceSessionConfig } from './types';
+
+const DEBUG = !!process.env.PUBLIC_EXPO_DANGEROUSLY_LOG_TO_SERVER_FOR_AI_AUTO_DEBUGGING;
 
 // Static reference to the conversation hook instance
 let conversationInstance: ReturnType<typeof useConversation> | null = null;
@@ -13,7 +15,7 @@ let conversationInstance: ReturnType<typeof useConversation> | null = null;
 class RealtimeVoiceSessionImpl implements VoiceSession {
 
     async startSession(config: VoiceSessionConfig): Promise<void> {
-        console.log('[RealtimeVoiceSessionImpl] conversationInstance:', conversationInstance);
+        if (DEBUG) console.log('[RealtimeVoiceSessionImpl] conversationInstance:', conversationInstance);
         if (!conversationInstance) {
             console.warn('Realtime voice session not initialized - conversationInstance is null');
             return;
@@ -34,11 +36,11 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             // Get user's preferred language for voice assistant
             const userLanguagePreference = storage.getState().settings.voiceAssistantLanguage;
             const elevenLabsLanguage = getElevenLabsCodeFromPreference(userLanguagePreference);
-            
+
             if (!config.token && !config.agentId) {
                 throw new Error('Neither token nor agentId provided');
             }
-            
+
             const sessionConfig: any = {
                 connectionType: 'webrtc',
                 dynamicVariables: {
@@ -52,10 +54,9 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
                 },
                 ...(config.token ? { conversationToken: config.token } : { agentId: config.agentId })
             };
-            
-            const conversationId = await conversationInstance.startSession(sessionConfig);
 
-            console.log('Started conversation with ID:', conversationId);
+            const conversationId = await conversationInstance.startSession(sessionConfig);
+            if (DEBUG) console.log('Started conversation with ID:', conversationId);
         } catch (error) {
             console.error('Failed to start realtime session:', error);
             storage.getState().setRealtimeStatus('error');
@@ -95,46 +96,49 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
 }
 
 export const RealtimeVoiceSession: React.FC = () => {
+    const micMuted = useRealtimeMicMuted();
+
     const conversation = useConversation({
         clientTools: realtimeClientTools,
+        micMuted,
         onConnect: () => {
-            console.log('Realtime session connected');
+            if (DEBUG) console.log('Realtime session connected');
             storage.getState().setRealtimeStatus('connected');
             storage.getState().setRealtimeMode('idle');
         },
         onDisconnect: () => {
-            console.log('Realtime session disconnected');
+            if (DEBUG) console.log('Realtime session disconnected');
             storage.getState().setRealtimeStatus('disconnected');
             storage.getState().setRealtimeMode('idle', true); // immediate mode change
             storage.getState().clearRealtimeModeDebounce();
         },
         onMessage: (data) => {
-            console.log('Realtime message:', data);
+            if (DEBUG) console.log('Realtime message:', data);
         },
         onError: (error) => {
             // Log but don't block app - voice features will be unavailable
             // This prevents initialization errors from showing "Terminals error" on startup
-            console.warn('Realtime voice not available:', error);
+            if (DEBUG) console.warn('Realtime voice not available:', error);
             // Don't set error status during initialization - just set disconnected
             // This allows the app to continue working without voice features
             storage.getState().setRealtimeStatus('disconnected');
             storage.getState().setRealtimeMode('idle', true); // immediate mode change
         },
         onStatusChange: (data) => {
-            console.log('Realtime status change:', data);
+            if (DEBUG) console.log('Realtime status change:', data);
         },
         onModeChange: (data) => {
-            console.log('Realtime mode change:', data);
-            
+            if (DEBUG) console.log('Realtime mode change:', data);
+
             // Only animate when speaking
             const mode = data.mode as string;
             const isSpeaking = mode === 'speaking';
-            
+
             // Use centralized debounce logic from storage
             storage.getState().setRealtimeMode(isSpeaking ? 'speaking' : 'idle');
         },
         onDebug: (message) => {
-            console.debug('Realtime debug:', message);
+            if (DEBUG) console.debug('Realtime debug:', message);
         }
     });
 
@@ -142,16 +146,16 @@ export const RealtimeVoiceSession: React.FC = () => {
 
     useEffect(() => {
         // Store the conversation instance globally
-        console.log('[RealtimeVoiceSession] Setting conversationInstance:', conversation);
+        if (DEBUG) console.log('[RealtimeVoiceSession] Setting conversationInstance:', conversation);
         conversationInstance = conversation;
 
         // Register the voice session once
         if (!hasRegistered.current) {
             try {
-                console.log('[RealtimeVoiceSession] Registering voice session');
+                if (DEBUG) console.log('[RealtimeVoiceSession] Registering voice session');
                 registerVoiceSession(new RealtimeVoiceSessionImpl());
                 hasRegistered.current = true;
-                console.log('[RealtimeVoiceSession] Voice session registered successfully');
+                if (DEBUG) console.log('[RealtimeVoiceSession] Voice session registered successfully');
             } catch (error) {
                 console.error('Failed to register voice session:', error);
             }
