@@ -99,7 +99,13 @@ jobs:
           fi
 
           if [ "$status" -ne 0 ]; then
-            echo "pod install failed, trying pod repo update and clean Pods as last resort..." | tee -a "$LOG_FILE"
+            echo "pod install failed, attempting RevenueCat pod reconciliation..." | tee -a "$LOG_FILE"
+            pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update 2>&1 | tee -a "$LOG_FILE"
+            status=${PIPESTATUS[0]}
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "RevenueCat reconciliation failed, trying pod repo update and clean Pods as last resort..." | tee -a "$LOG_FILE"
             pod repo update 2>&1 | tee -a "$LOG_FILE"
             rm -rf Pods
             pod install --repo-update 2>&1 | tee -a "$LOG_FILE"
