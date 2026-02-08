@@ -420,11 +420,25 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
     // Handle microphone button press - memoized to prevent button flashing
     const handleMicrophonePress = React.useCallback(async () => {
+        tracking?.capture('voice_mic_press_handler_entered', {
+            sessionId,
+            realtimeStatus,
+        });
+
         if (realtimeStatus === 'connecting') {
+            tracking?.capture('voice_mic_press_ignored', {
+                sessionId,
+                reason: 'connecting',
+            });
             return; // Prevent actions during transitions
         }
         if (realtimeStatus === 'disconnected' || realtimeStatus === 'error') {
             try {
+                tracking?.capture('voice_mic_start_attempt', {
+                    sessionId,
+                    realtimeStatus,
+                });
+
                 const initialPrompt = voiceHooks.onVoiceStarted(sessionId);
                 await startRealtimeSession(sessionId, initialPrompt);
                 tracking?.capture('voice_session_started', { sessionId });
@@ -434,6 +448,10 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 tracking?.capture('voice_session_error', { error: error instanceof Error ? error.message : 'Unknown error' });
             }
         } else if (realtimeStatus === 'connected') {
+            tracking?.capture('voice_mic_stop_attempt', {
+                sessionId,
+            });
+
             await stopRealtimeSession();
             tracking?.capture('voice_session_stopped');
 

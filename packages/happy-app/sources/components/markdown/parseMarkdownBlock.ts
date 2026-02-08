@@ -82,7 +82,6 @@ export function parseMarkdownBlock(markdown: string) {
         // Code block
         if (trimmed.startsWith('```')) {
             const language = trimmed.slice(3).trim() || null;
-            const normalizedLanguage = language?.split(/\s+/)[0]?.toLowerCase() ?? null;
             let content = [];
             while (index < lines.length) {
                 const nextLine = lines[index];
@@ -96,7 +95,7 @@ export function parseMarkdownBlock(markdown: string) {
             const contentString = content.join('\n');
 
             // Detect mermaid diagram language and route to appropriate block type
-            if (normalizedLanguage === 'mermaid') {
+            if (language === 'mermaid') {
                 blocks.push({ type: 'mermaid', content: contentString });
             } else {
                 blocks.push({ type: 'code-block', language, content: contentString });

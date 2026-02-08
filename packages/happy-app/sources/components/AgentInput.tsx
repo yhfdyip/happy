@@ -24,6 +24,7 @@ import { Metadata } from '@/sync/storageTypes';
 import { AIBackendProfile, getProfileEnvironmentVariables, validateProfileForAgent } from '@/sync/settings';
 import { getBuiltInProfile } from '@/sync/profileUtils';
 import { DynamicModelOption, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
+import { tracking } from '@/track';
 
 interface AgentInputProps {
     value: string;
@@ -1286,6 +1287,13 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             if (hasSendPayload) {
                                                 props.onSend();
                                             } else {
+                                                tracking?.capture('voice_button_pressed_ui', {
+                                                    hasMicHandler: !!props.onMicPress,
+                                                    isMicActive: !!props.isMicActive,
+                                                    isSendDisabled: !!props.isSendDisabled,
+                                                    isSending: !!props.isSending,
+                                                    isPickingImage: !!props.isPickingImage,
+                                                });
                                                 props.onMicPress?.();
                                             }
                                         }}
