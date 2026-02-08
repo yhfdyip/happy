@@ -76,21 +76,42 @@ jobs:
       - name: Install iOS Pods
         run: |
           cd packages/happy-app/ios
-          pod install --deployment || {
-            echo "pod install --deployment failed, retrying without deployment..."
-            pod install || {
-              echo "pod install failed, trying pod repo update as last resort..."
-              pod repo update
-              pod install || {
-                echo "pod install still failing, attempting RevenueCat pod reconciliation..."
-                pod update PurchasesHybridCommonUI PurchasesHybridCommon --repo-update || {
-                  echo "RevenueCat reconciliation failed, clearing local Pods directory and retrying once..."
-                  rm -rf Pods
-                  pod install --repo-update
-                }
-              }
-            }
-          }
+          LOG_FILE="$RUNNER_TEMP/pod-install.log"
+          : > "$LOG_FILE"
+
+          set +e
+
+          pod install --deployment 2>&1 | tee -a "$LOG_FILE"
+          status=${PIPESTATUS[0]}
+
+          if [ "$status" -ne 0 ]; then
+            echo "pod install --deployment failed, retrying without deployment..." | tee -a "$LOG_FILE"
+            pod install 2>&1 | tee -a "$LOG_FILE"
+            status=${PIPESTATUS[0]}
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "pod install failed, trying pod repo update and clean Pods as last resort..." | tee -a "$LOG_FILE"
+            pod repo update 2>&1 | tee -a "$LOG_FILE"
+            rm -rf Pods
+            pod install --repo-update 2>&1 | tee -a "$LOG_FILE"
+            status=${PIPESTATUS[0]}
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "Final pod install failure. Showing last 200 log lines:" | tee -a "$LOG_FILE"
+            tail -n 200 "$LOG_FILE"
+            exit "$status"
+          fi
+
+      - name: Upload Pod install log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pod-install-log
+          path: ${{ runner.temp }}/pod-install.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Build iOS archive (unsigned)
         run: |
