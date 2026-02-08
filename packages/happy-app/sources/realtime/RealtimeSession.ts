@@ -15,6 +15,8 @@ let currentSessionId: string | null = null;
 export async function startRealtimeSession(sessionId: string, initialContext?: string) {
     if (!voiceSession) {
         console.warn('No voice session registered');
+        storage.getState().setRealtimeStatus('error');
+        Modal.alert(t('common.error'), t('errors.voiceServiceUnavailable'));
         return;
     }
 
@@ -26,28 +28,35 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         return;
     }
 
-    const experimentsEnabled = storage.getState().settings.experiments;
-    const agentId = __DEV__ ? config.elevenLabsAgentIdDev : config.elevenLabsAgentIdProd;
-    
-    if (!agentId) {
-        console.error('Agent ID not configured');
-        return;
-    }
+    const settings = storage.getState().settings;
+    const experimentsEnabled = settings.experiments;
+    const useCustomAgent = settings.elevenLabsUseCustomAgent;
+    const customAgentId = settings.elevenLabsAgentId?.trim() || undefined;
+    const shouldUseTokenFlow = experimentsEnabled || useCustomAgent;
+    const configuredAgentId = __DEV__ ? config.elevenLabsAgentIdDev : config.elevenLabsAgentIdProd;
     
     try {
-        // Simple path: No experiments = no auth needed
-        if (!experimentsEnabled) {
-            currentSessionId = sessionId;
-            voiceSessionStarted = true;
+        // Simple path: no experiments and no custom agent = direct agentId
+        if (!shouldUseTokenFlow) {
+            if (!configuredAgentId) {
+                console.error('Agent ID not configured for non-experimental voice session');
+                storage.getState().setRealtimeStatus('error');
+                Modal.alert(t('common.error'), t('errors.voiceServiceUnavailable'));
+                return;
+            }
+
             await voiceSession.startSession({
                 sessionId,
                 initialContext,
-                agentId  // Use agentId directly, no token
+                agentId: configuredAgentId  // Use agentId directly, no token
             });
+
+            currentSessionId = sessionId;
+            voiceSessionStarted = true;
             return;
         }
         
-        // Experiments enabled = full auth flow
+        // Experiments/custom-agent path = authenticated token flow
         const credentials = await TokenStorage.getCredentials();
         if (!credentials) {
             Modal.alert(t('common.error'), t('errors.authenticationFailed'));
@@ -67,9 +76,6 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             return;
         }
 
-        currentSessionId = sessionId;
-        voiceSessionStarted = true;
-
         if (response.token) {
             // Use token from backend
             await voiceSession.startSession({
@@ -80,16 +86,25 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             });
         } else {
             // No token (e.g. server not deployed yet) - use agentId directly
+            const fallbackAgentId = response.agentId || customAgentId || configuredAgentId;
+            if (!fallbackAgentId) {
+                throw new Error('Voice token missing and no fallback agentId configured');
+            }
+
             await voiceSession.startSession({
                 sessionId,
                 initialContext,
-                agentId
+                agentId: fallbackAgentId
             });
         }
+
+        currentSessionId = sessionId;
+        voiceSessionStarted = true;
     } catch (error) {
         console.error('Failed to start realtime session:', error);
         currentSessionId = null;
         voiceSessionStarted = false;
+        storage.getState().setRealtimeStatus('error');
         Modal.alert(t('common.error'), t('errors.voiceServiceUnavailable'));
     }
 }

@@ -36,6 +36,7 @@ interface AgentInputProps {
     pendingImageCount?: number;
     pendingImages?: { id: string; uri: string }[];
     onRemovePendingImage?: (imageId: string) => void;
+    uploadStatusText?: string;
     sendIcon?: React.ReactNode;
     onMicPress?: () => void;
     isMicActive?: boolean;
@@ -483,7 +484,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         // Original key handling
         if (Platform.OS === 'web') {
             if (agentInputEnterToSend && event.key === 'Enter' && !event.shiftKey) {
-                if (hasSendPayload) {
+                if (hasSendPayload && !props.isSending) {
                     props.onSend();
                     return true; // Key was handled
                 }
@@ -502,7 +503,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
 
         }
         return false; // Key was not handled
-    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, hasSendPayload, props.onSend, props.permissionMode, props.onPermissionModeChange]);
+    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, hasSendPayload, props.onSend, props.permissionMode, props.onPermissionModeChange, props.isSending]);
 
 
 
@@ -1025,9 +1026,13 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         />
                                         <Pressable
                                             onPress={() => {
+                                                if (props.isSending) {
+                                                    return;
+                                                }
                                                 hapticsLight();
                                                 props.onRemovePendingImage?.(image.id);
                                             }}
+                                            disabled={props.isSending}
                                             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                                             style={(p) => ({
                                                 position: 'absolute',
@@ -1039,7 +1044,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                                 backgroundColor: 'rgba(0,0,0,0.65)',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                opacity: p.pressed ? 0.7 : 1,
+                                                opacity: props.isSending ? 0.45 : (p.pressed ? 0.7 : 1),
                                             })}
                                         >
                                             <Ionicons name="close" size={12} color="#fff" />
@@ -1047,6 +1052,23 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     </View>
                                 ))}
                             </View>
+                            {props.uploadStatusText && (
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    paddingTop: 8,
+                                }}>
+                                    <ActivityIndicator size="small" color={theme.colors.textSecondary} />
+                                    <Text style={{
+                                        fontSize: 12,
+                                        color: theme.colors.textSecondary,
+                                        ...Typography.default(),
+                                    }}>
+                                        {props.uploadStatusText}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                     )}
 

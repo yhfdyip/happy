@@ -15,7 +15,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
     async startSession(config: VoiceSessionConfig): Promise<void> {
         if (!conversationInstance) {
             console.warn('Realtime voice session not initialized');
-            return;
+            throw new Error('Realtime voice session not initialized');
         }
 
         try {
@@ -46,6 +46,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
         } catch (error) {
             console.error('Failed to start realtime session:', error);
             storage.getState().setRealtimeStatus('error');
+            throw error;
         }
     }
 

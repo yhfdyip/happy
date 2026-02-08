@@ -41,6 +41,14 @@ type PendingImage = {
     height?: number;
 };
 
+type ImageUploadStage = 'prepare' | 'compress' | 'upload' | 'sending';
+
+type ImageUploadProgress = {
+    stage: ImageUploadStage;
+    current: number;
+    total: number;
+};
+
 export const SessionView = React.memo((props: { id: string }) => {
     const sessionId = props.id;
     const router = useRouter();
@@ -191,6 +199,9 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const experiments = useSetting('experiments');
     const [isPickingImage, setIsPickingImage] = React.useState(false);
     const [pendingImages, setPendingImages] = React.useState<PendingImage[]>([]);
+    const [isSendingMessage, setIsSendingMessage] = React.useState(false);
+    const [imageUploadProgress, setImageUploadProgress] = React.useState<ImageUploadProgress | null>(null);
+    const isSendingMessageRef = React.useRef(false);
 
     // Use draft hook for auto-saving message drafts
     const { clearDraft } = useDraft(sessionId, message, setMessage);
@@ -244,8 +255,27 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     }, [isCodexSession, isPickingImage]);
 
     const removePendingImage = React.useCallback((imageId: string) => {
+        if (isSendingMessage) {
+            return;
+        }
         setPendingImages((prev) => prev.filter((item) => item.id !== imageId));
-    }, []);
+    }, [isSendingMessage]);
+
+    const uploadStatusText = React.useMemo(() => {
+        if (!isSendingMessage || !imageUploadProgress) {
+            return undefined;
+        }
+
+        const stageText = imageUploadProgress.stage === 'prepare'
+            ? '准备上传图片…'
+            : imageUploadProgress.stage === 'compress'
+                ? '压缩图片中…'
+                : imageUploadProgress.stage === 'upload'
+                    ? '上传图片中…'
+                    : '发送消息中…';
+
+        return `${stageText} ${imageUploadProgress.current}/${imageUploadProgress.total}`;
+    }, [imageUploadProgress, isSendingMessage]);
 
     const sendPendingImages = React.useCallback(async (text: string) => {
         if (!isCodexSession || pendingImages.length === 0) {
@@ -253,6 +283,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         }
 
         const imageCount = pendingImages.length;
+        setImageUploadProgress({ stage: 'prepare', current: 0, total: imageCount });
+
         const mkdirCommand = `node -e "require('fs').mkdirSync('.happy-attachments',{recursive:true})"`;
         await sync.sessionRpc(sessionId, 'bash', { command: mkdirCommand, cwd: '.', timeout: 15000 });
 
@@ -261,6 +293,9 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
         for (let index = 0; index < pendingImages.length; index++) {
             const image = pendingImages[index];
+            const progressIndex = index + 1;
+            setImageUploadProgress({ stage: 'compress', current: progressIndex, total: imageCount });
+
             let width = Math.min(image.width ?? 1600, 1600);
             let compress = 0.72;
             let manipulated: ImageManipulator.ImageResult | null = null;
@@ -291,6 +326,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
             }
 
             const uploadPath = `.happy-attachments/happy-image-${Date.now()}-${index + 1}.jpg`;
+            setImageUploadProgress({ stage: 'upload', current: progressIndex, total: imageCount });
+
             const writeResult = await sync.sessionRpc(sessionId, 'writeFile', {
                 path: uploadPath,
                 content: manipulated.base64,
@@ -311,6 +348,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         const displayText = trimmedText
             ? `📷 已发送 ${imageCount} 张图片\n${trimmedText}`
             : `📷 已发送 ${imageCount} 张图片`;
+
+        setImageUploadProgress({ stage: 'sending', current: imageCount, total: imageCount });
 
         await sync.sendMessage(
             sessionId,
@@ -450,6 +489,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 pendingImageCount={pendingImages.length}
                 pendingImages={pendingImages.map((item) => ({ id: item.id, uri: item.uri }))}
                 onRemovePendingImage={removePendingImage}
+                isSending={isSendingMessage}
+                uploadStatusText={uploadStatusText}
                 permissionMode={permissionMode}
                 onPermissionModeChange={updatePermissionMode}
                 modelMode={modelMode as any}
@@ -463,7 +504,14 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 isPulsing: sessionStatus.isPulsing
             }}
             onSend={() => {
+                if (isSendingMessageRef.current) {
+                    return;
+                }
+
                 const run = async () => {
+                    isSendingMessageRef.current = true;
+                    setIsSendingMessage(true);
+
                     try {
                         if (pendingImages.length > 0) {
                             const textToSend = message;
@@ -474,15 +522,22 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                             return;
                         }
 
-                        if (message.trim()) {
-                            setMessage('');
-                            clearDraft();
-                            await sync.sendMessage(sessionId, message);
-                            trackMessageSent();
+                        const trimmedMessage = message.trim();
+                        if (!trimmedMessage) {
+                            return;
                         }
+
+                        setMessage('');
+                        clearDraft();
+                        await sync.sendMessage(sessionId, message);
+                        trackMessageSent();
                     } catch (error) {
                         const msg = error instanceof Error ? error.message : String(error);
                         Modal.alert(t('common.error'), `发送图片失败：${msg}`);
+                    } finally {
+                        isSendingMessageRef.current = false;
+                        setIsSendingMessage(false);
+                        setImageUploadProgress(null);
                     }
                 };
 

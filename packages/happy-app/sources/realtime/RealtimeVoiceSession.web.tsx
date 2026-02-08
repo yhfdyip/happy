@@ -18,7 +18,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
         if (DEBUG) console.log('[RealtimeVoiceSessionImpl] conversationInstance:', conversationInstance);
         if (!conversationInstance) {
             console.warn('Realtime voice session not initialized - conversationInstance is null');
-            return;
+            throw new Error('Realtime voice session not initialized');
         }
 
         try {
@@ -30,7 +30,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
             } catch (error) {
                 console.error('Failed to get microphone permission:', error);
                 storage.getState().setRealtimeStatus('error');
-                return;
+                throw error;
             }
 
             // Get user's preferred language for voice assistant
@@ -60,6 +60,7 @@ class RealtimeVoiceSessionImpl implements VoiceSession {
         } catch (error) {
             console.error('Failed to start realtime session:', error);
             storage.getState().setRealtimeStatus('error');
+            throw error;
         }
     }
 
