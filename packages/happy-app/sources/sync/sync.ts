@@ -231,7 +231,7 @@ class Sync {
         const flavor = session.metadata?.flavor;
         const isGemini = flavor === 'gemini';
         const isCodex = flavor === 'codex';
-        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : isCodex ? 'gpt-5-codex-high' : 'default');
+        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : isCodex ? 'gpt-5.3-codex' : 'default');
 
         // Generate local ID
         const localId = randomUUID();
@@ -253,11 +253,28 @@ class Sync {
             sentFrom = 'web'; // fallback
         }
 
-        // Model settings - for Gemini/Codex, pass selected model; for others, CLI handles it
+        // Model settings:
+        // - Gemini: pass selected model directly
+        // - Codex: map historical app aliases to currently supported model IDs
         let model: string | null = null;
-        if ((isGemini || isCodex) && modelMode !== 'default') {
-            // For Gemini ACP and Codex, pass the selected model to CLI
+        if (isGemini && modelMode !== 'default') {
+            // For Gemini ACP, pass the selected model to CLI
             model = modelMode;
+        } else if (isCodex && modelMode !== 'default') {
+            const codexModelAliasMap: Record<string, string> = {
+                // Current explicit model
+                'gpt-5.3-codex': 'gpt-5.3-codex',
+                // Legacy app aliases (mapped to currently supported IDs)
+                'gpt-5-codex-high': 'gpt-5.3-codex',
+                'gpt-5-codex-medium': 'gpt-5.2-codex',
+                'gpt-5-codex-low': 'gpt-5.2-codex',
+                'gpt-5-minimal': 'gpt-5.2',
+                'gpt-5-low': 'gpt-5.2',
+                'gpt-5-medium': 'gpt-5.2',
+                'gpt-5-high': 'gpt-5.2'
+            };
+
+            model = codexModelAliasMap[modelMode] || null;
         }
         const fallbackModel: string | null = null;
 

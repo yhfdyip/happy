@@ -688,8 +688,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             );
                                         })
                                     ) : isCodex ? (
-                                        (['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'] as const).map((model) => {
+                                        (['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'] as const).map((model) => {
                                             const modelConfig = {
+                                                'gpt-5.3-codex': { label: 'GPT-5.3 Codex (Latest)' },
                                                 'gpt-5-codex-high': { label: t('agentInput.codexModel.gpt5CodexHigh') },
                                                 'gpt-5-codex-medium': { label: t('agentInput.codexModel.gpt5CodexMedium') },
                                                 'gpt-5-codex-low': { label: t('agentInput.codexModel.gpt5CodexLow') },

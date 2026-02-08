@@ -174,7 +174,7 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const flavor = session.metadata?.flavor;
     const isGeminiSession = flavor === 'gemini';
     const isCodexSession = flavor === 'codex';
-    const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : isCodexSession ? 'gpt-5-codex-high' : 'default');
+    const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : isCodexSession ? 'gpt-5.3-codex' : 'default');
     const sessionStatus = useSessionStatus(session);
     const sessionUsage = useSessionUsage(sessionId);
     const alwaysShowContextSize = useSetting('alwaysShowContextSize');
@@ -317,7 +317,7 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     }, [sessionId]);
 
     // Function to update model mode
-    const updateModelMode = React.useCallback((mode: 'default' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite') => {
+    const updateModelMode = React.useCallback((mode: 'default' | 'gpt-5.3-codex' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite') => {
         storage.getState().updateSessionModelMode(sessionId, mode);
     }, [sessionId]);
 

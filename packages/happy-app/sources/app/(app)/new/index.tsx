@@ -368,7 +368,7 @@ function NewSessionWizard() {
 
     const [modelMode, setModelMode] = React.useState<ModelMode>(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
+        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -381,7 +381,7 @@ function NewSessionWizard() {
                 return lastUsedModelMode as ModelMode;
             }
         }
-        return agentType === 'codex' ? 'gpt-5-codex-high' : agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
+        return agentType === 'codex' ? 'gpt-5.3-codex' : agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
     });
 
     // Session details state
@@ -721,7 +721,7 @@ function NewSessionWizard() {
     // Reset model mode when agent type changes to appropriate default
     React.useEffect(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
+        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -737,7 +737,7 @@ function NewSessionWizard() {
         if (!isValidForCurrentAgent) {
             // Set appropriate default for each agent type
             if (agentType === 'codex') {
-                setModelMode('gpt-5-codex-high');
+                setModelMode('gpt-5.3-codex');
             } else if (agentType === 'gemini') {
                 setModelMode('gemini-2.5-pro');
             } else {
@@ -1064,7 +1064,7 @@ function NewSessionWizard() {
                 // Set permission mode and model mode on the session
                 storage.getState().updateSessionPermissionMode(result.sessionId, permissionMode);
                 if ((agentType === 'gemini' || agentType === 'codex') && modelMode && modelMode !== 'default') {
-                    storage.getState().updateSessionModelMode(result.sessionId, modelMode as 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite');
+                    storage.getState().updateSessionModelMode(result.sessionId, modelMode as 'gpt-5.3-codex' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite');
                 }
 
                 // Send initial message if provided

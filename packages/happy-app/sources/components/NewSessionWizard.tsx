@@ -1631,6 +1631,7 @@ export function NewSessionWizard({ onComplete, onCancel, initialPrompt = '' }: N
                                 { value: 'sonnet', label: 'Sonnet', description: 'Fast and efficient', icon: 'speedometer-outline' },
                                 { value: 'opus', label: 'Opus', description: 'Most capable model', icon: 'diamond-outline' },
                             ] as const : [
+                                { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', description: 'Latest Codex model', icon: 'sparkles-outline' },
                                 { value: 'gpt-5-codex-high', label: 'GPT-5 Codex High', description: 'Best for complex coding', icon: 'diamond-outline' },
                                 { value: 'gpt-5-codex-medium', label: 'GPT-5 Codex Medium', description: 'Balanced coding assistance', icon: 'cube-outline' },
                                 { value: 'gpt-5-codex-low', label: 'GPT-5 Codex Low', description: 'Fast coding help', icon: 'speedometer-outline' },
