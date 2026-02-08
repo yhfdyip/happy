@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { machineSpawnNewSession } from '@/sync/ops';
 import { Modal } from '@/modal';
 import { sync } from '@/sync/sync';
+import { DynamicModelOption, fetchCodexModelsForMachine, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { createWorktree } from '@/utils/createWorktree';
 import { getTempData, type NewSessionData } from '@/utils/tempDataStore';
@@ -368,7 +369,7 @@ function NewSessionWizard() {
 
     const [modelMode, setModelMode] = React.useState<ModelMode>(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
+        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high', 'gpt-5.2-codex', 'gpt-5.2', 'gpt-5-codex', 'gpt-5'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -383,6 +384,7 @@ function NewSessionWizard() {
         }
         return agentType === 'codex' ? 'gpt-5.3-codex' : agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
     });
+    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>(() => getStaticCodexFallbackModels());
 
     // Session details state
     const [selectedMachineId, setSelectedMachineId] = React.useState<string | null>(() => {
@@ -721,7 +723,9 @@ function NewSessionWizard() {
     // Reset model mode when agent type changes to appropriate default
     React.useEffect(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
+        const dynamicCodexModes = codexModels.map((item) => item.id);
+        const staticCodexAliases = ['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
+        const validCodexModes: ModelMode[] = [...new Set([...dynamicCodexModes, ...staticCodexAliases])] as ModelMode[];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -737,14 +741,38 @@ function NewSessionWizard() {
         if (!isValidForCurrentAgent) {
             // Set appropriate default for each agent type
             if (agentType === 'codex') {
-                setModelMode('gpt-5.3-codex');
+                setModelMode((codexModels[0]?.id as ModelMode) || 'gpt-5.3-codex');
             } else if (agentType === 'gemini') {
                 setModelMode('gemini-2.5-pro');
             } else {
                 setModelMode('default');
             }
         }
-    }, [agentType, modelMode]);
+    }, [agentType, codexModels, modelMode]);
+
+    React.useEffect(() => {
+        if (agentType !== 'codex' || !selectedMachineId) {
+            return;
+        }
+
+        let cancelled = false;
+        const run = async () => {
+            try {
+                const models = await fetchCodexModelsForMachine(selectedMachineId);
+                if (!cancelled && models.length > 0) {
+                    setCodexModels(models);
+                }
+            } catch {
+                // Keep fallback list
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [agentType, selectedMachineId]);
 
     // Scroll to section helpers - for AgentInput button clicks
     const scrollToSection = React.useCallback((ref: React.RefObject<View | Text | null>) => {
@@ -1064,7 +1092,7 @@ function NewSessionWizard() {
                 // Set permission mode and model mode on the session
                 storage.getState().updateSessionPermissionMode(result.sessionId, permissionMode);
                 if ((agentType === 'gemini' || agentType === 'codex') && modelMode && modelMode !== 'default') {
-                    storage.getState().updateSessionModelMode(result.sessionId, modelMode as 'gpt-5.3-codex' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite');
+                    storage.getState().updateSessionModelMode(result.sessionId, modelMode);
                 }
 
                 // Send initial message if provided
@@ -1185,6 +1213,7 @@ function NewSessionWizard() {
                                 onPermissionModeChange={handlePermissionModeChange}
                                 modelMode={modelMode}
                                 onModelModeChange={setModelMode}
+                                codexModelOptions={codexModels}
                                 connectionStatus={connectionStatus}
                                 machineName={selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host}
                                 onMachineClick={handleMachineClick}
@@ -1935,6 +1964,7 @@ function NewSessionWizard() {
                             onPermissionModeChange={handleAgentInputPermissionChange}
                             modelMode={modelMode}
                             onModelModeChange={setModelMode}
+                            codexModelOptions={codexModels}
                             connectionStatus={connectionStatus}
                             machineName={selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host}
                             onMachineClick={handleAgentInputMachineClick}

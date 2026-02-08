@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { readFile, writeFile, readdir, stat } from 'fs/promises';
 import { createHash } from 'crypto';
 import { join } from 'path';
+import { homedir } from 'os';
 import { run as runRipgrep } from '@/modules/ripgrep/index';
 import { run as runDifftastic } from '@/modules/difftastic/index';
 import { RpcHandlerManager } from '../../api/rpc/RpcHandlerManager';
@@ -108,6 +109,191 @@ interface DifftasticResponse {
     stdout?: string;
     stderr?: string;
     error?: string;
+}
+
+interface ListModelsRequest {
+    provider?: 'codex';
+    limit?: number;
+}
+
+interface ModelListItem {
+    id: string;
+    model: string;
+    displayName: string;
+    description: string;
+    isDefault: boolean;
+}
+
+interface ListModelsResponse {
+    success: boolean;
+    data?: ModelListItem[];
+    source?: 'remote' | 'fallback';
+    error?: string;
+}
+
+const CODEX_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const CODEX_FALLBACK_MODELS: ModelListItem[] = [
+    {
+        id: 'gpt-5.3-codex',
+        model: 'gpt-5.3-codex',
+        displayName: 'GPT-5.3 Codex',
+        description: 'Latest recommended coding model',
+        isDefault: true
+    },
+    {
+        id: 'gpt-5.2-codex',
+        model: 'gpt-5.2-codex',
+        displayName: 'GPT-5.2 Codex',
+        description: 'Balanced coding model',
+        isDefault: false
+    },
+    {
+        id: 'gpt-5.2',
+        model: 'gpt-5.2',
+        displayName: 'GPT-5.2',
+        description: 'General GPT-5.2 model',
+        isDefault: false
+    },
+    {
+        id: 'gpt-5-codex',
+        model: 'gpt-5-codex',
+        displayName: 'GPT-5 Codex',
+        description: 'Legacy GPT-5 coding model',
+        isDefault: false
+    },
+    {
+        id: 'gpt-5',
+        model: 'gpt-5',
+        displayName: 'GPT-5',
+        description: 'Legacy GPT-5 model',
+        isDefault: false
+    }
+];
+
+let cachedCodexModels: { expiresAt: number; data: ModelListItem[] } | null = null;
+
+function toModelsEndpoint(baseUrl: string): string {
+    const normalized = baseUrl.trim().replace(/\/+$/, '');
+    if (!normalized) {
+        return 'https://api.openai.com/v1/models';
+    }
+    if (normalized.endsWith('/models')) {
+        return normalized;
+    }
+    if (/\/v\d+$/i.test(normalized)) {
+        return `${normalized}/models`;
+    }
+    return `${normalized}/v1/models`;
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function readCodexApiKey(): Promise<string | null> {
+    const envKey = process.env.OPENAI_API_KEY?.trim();
+    if (envKey) {
+        return envKey;
+    }
+
+    const authPath = join(homedir(), '.codex', 'auth.json');
+    try {
+        const raw = await readFile(authPath, 'utf8');
+        const parsed = JSON.parse(raw) as { OPENAI_API_KEY?: string };
+        const fileKey = parsed.OPENAI_API_KEY?.trim();
+        return fileKey || null;
+    } catch {
+        return null;
+    }
+}
+
+async function readCodexBaseUrl(): Promise<string> {
+    const configPath = join(homedir(), '.codex', 'config.toml');
+    try {
+        const raw = await readFile(configPath, 'utf8');
+        const providerMatch = raw.match(/^\s*model_provider\s*=\s*["']([^"']+)["']\s*$/m);
+        const providerId = providerMatch?.[1];
+        if (!providerId) {
+            return 'https://api.openai.com/v1';
+        }
+
+        const sectionPattern = new RegExp(`^\\s*\\[model_providers\\.${escapeRegExp(providerId)}\\]\\s*$`, 'm');
+        const sectionMatch = sectionPattern.exec(raw);
+        if (!sectionMatch) {
+            return 'https://api.openai.com/v1';
+        }
+
+        const sectionStart = sectionMatch.index + sectionMatch[0].length;
+        const afterSection = raw.slice(sectionStart);
+        const nextSectionMatch = afterSection.match(/^\s*\[.*\]\s*$/m);
+        const sectionBody = nextSectionMatch
+            ? afterSection.slice(0, nextSectionMatch.index)
+            : afterSection;
+
+        const baseUrlMatch = sectionBody.match(/^\s*base_url\s*=\s*["']([^"']+)["']\s*$/m);
+        return baseUrlMatch?.[1] || 'https://api.openai.com/v1';
+    } catch {
+        return 'https://api.openai.com/v1';
+    }
+}
+
+async function fetchCodexModels(limit?: number): Promise<ModelListItem[]> {
+    if (cachedCodexModels && cachedCodexModels.expiresAt > Date.now()) {
+        return cachedCodexModels.data;
+    }
+
+    const apiKey = await readCodexApiKey();
+    if (!apiKey) {
+        throw new Error('Missing OpenAI API key in environment or ~/.codex/auth.json');
+    }
+
+    const baseUrl = await readCodexBaseUrl();
+    const endpoint = toModelsEndpoint(baseUrl);
+    const url = new URL(endpoint);
+    if (limit && Number.isFinite(limit) && limit > 0) {
+        url.searchParams.set('limit', String(Math.min(Math.floor(limit), 200)));
+    }
+
+    const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Failed to fetch models (${response.status}): ${detail.slice(0, 240)}`);
+    }
+
+    const payload = await response.json() as {
+        data?: Array<{ id?: string; created?: number }>;
+    };
+
+    const models = (payload.data || [])
+        .filter((item): item is { id: string; created?: number } => typeof item.id === 'string' && item.id.length > 0)
+        .filter((item) => item.id.startsWith('gpt-'))
+        .sort((a, b) => (b.created || 0) - (a.created || 0))
+        .map((item, index) => ({
+            id: item.id,
+            model: item.id,
+            displayName: item.id,
+            description: index === 0 ? 'Most recent model from provider' : 'Available provider model',
+            isDefault: index === 0
+        }));
+
+    if (models.length === 0) {
+        throw new Error('Provider returned no GPT models');
+    }
+
+    cachedCodexModels = {
+        data: models,
+        expiresAt: Date.now() + CODEX_MODELS_CACHE_TTL_MS
+    };
+
+    return models;
 }
 
 /*
@@ -516,6 +702,36 @@ export function registerCommonHandlers(rpcHandlerManager: RpcHandlerManager, wor
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Failed to run difftastic'
+            };
+        }
+    });
+
+    // Dynamic model list handler (used by mobile/web app)
+    rpcHandlerManager.registerHandler<ListModelsRequest, ListModelsResponse>('listModels', async (data) => {
+        const provider = data?.provider || 'codex';
+        if (provider !== 'codex') {
+            return {
+                success: false,
+                error: `Unsupported provider: ${provider}`
+            };
+        }
+
+        try {
+            const models = await fetchCodexModels(data?.limit);
+            return {
+                success: true,
+                data: models,
+                source: 'remote'
+            };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.debug('[listModels] Falling back to built-in model list:', message);
+
+            return {
+                success: true,
+                data: CODEX_FALLBACK_MODELS,
+                source: 'fallback',
+                error: message
             };
         }
     });

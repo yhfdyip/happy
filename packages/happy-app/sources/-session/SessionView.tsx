@@ -16,12 +16,14 @@ import { storage, useIsDataReady, useLocalSetting, useRealtimeStatus, useSession
 import { useSession } from '@/sync/storage';
 import { Session } from '@/sync/storageTypes';
 import { sync } from '@/sync/sync';
+import { DynamicModelOption, fetchCodexModelsForSession, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
 import { t } from '@/text';
 import { tracking, trackMessageSent } from '@/track';
 import { isRunningOnMac } from '@/utils/platform';
 import { useDeviceType, useHeaderHeight, useIsLandscape, useIsTablet } from '@/utils/responsive';
 import { formatPathRelativeToHome, getSessionAvatarId, getSessionName, useSessionStatus } from '@/utils/sessionUtils';
 import { isVersionSupported, MINIMUM_CLI_VERSION } from '@/utils/versionUtils';
+import type { MessageAttachment } from '@/sync/typesMessageMeta';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
@@ -31,6 +33,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnistyles } from 'react-native-unistyles';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+
+type PendingImage = {
+    id: string;
+    uri: string;
+    width?: number;
+    height?: number;
+};
 
 export const SessionView = React.memo((props: { id: string }) => {
     const sessionId = props.id;
@@ -175,16 +184,18 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const isGeminiSession = flavor === 'gemini';
     const isCodexSession = flavor === 'codex';
     const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : isCodexSession ? 'gpt-5.3-codex' : 'default');
+    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>(() => getStaticCodexFallbackModels());
     const sessionStatus = useSessionStatus(session);
     const sessionUsage = useSessionUsage(sessionId);
     const alwaysShowContextSize = useSetting('alwaysShowContextSize');
     const experiments = useSetting('experiments');
     const [isPickingImage, setIsPickingImage] = React.useState(false);
+    const [pendingImages, setPendingImages] = React.useState<PendingImage[]>([]);
 
     // Use draft hook for auto-saving message drafts
     const { clearDraft } = useDraft(sessionId, message, setMessage);
 
-    const pickAndSendImageToCodex = React.useCallback(async () => {
+    const pickImagesForCodex = React.useCallback(async () => {
         if (!isCodexSession) {
             Modal.alert(t('common.error'), '当前仅 Codex 会话支持从 App 发送图片');
             return;
@@ -203,38 +214,60 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
             const pickerResult = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: false,
+                allowsMultipleSelection: true,
+                selectionLimit: 10,
                 base64: false,
                 quality: 1,
                 exif: false,
             });
-            if (pickerResult.canceled || !pickerResult.assets?.[0]) {
+            if (pickerResult.canceled || !pickerResult.assets?.length) {
                 return;
             }
 
-            const asset = pickerResult.assets[0];
-            const defaultPrompt = message.trim() || '';
-            const userPrompt = await Modal.prompt(
-                '发送图片给 Codex',
-                '可选：输入你希望 Codex 对这张图片做什么（例如：解释报错、总结界面、提取信息）',
-                {
-                    placeholder: '例如：请解释这张截图中的报错，并给出修复建议',
-                    defaultValue: defaultPrompt,
-                    cancelText: t('common.cancel'),
-                    confirmText: t('common.send'),
-                }
-            );
-            if (userPrompt === null) {
-                return;
-            }
+            const selectedImages: PendingImage[] = pickerResult.assets.map((asset, index) => ({
+                id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                uri: asset.uri,
+                width: asset.width,
+                height: asset.height,
+            }));
 
-            const MAX_RAW_BYTES = 350 * 1024;
-            let width = Math.min(asset.width ?? 1600, 1600);
+            setPendingImages((prev) => {
+                const next = [...prev, ...selectedImages];
+                return next.slice(0, 10);
+            });
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            Modal.alert(t('common.error'), `发送图片失败：${msg}`);
+        } finally {
+            setIsPickingImage(false);
+        }
+    }, [isCodexSession, isPickingImage]);
+
+    const removePendingImage = React.useCallback((imageId: string) => {
+        setPendingImages((prev) => prev.filter((item) => item.id !== imageId));
+    }, []);
+
+    const sendPendingImages = React.useCallback(async (text: string) => {
+        if (!isCodexSession || pendingImages.length === 0) {
+            return false;
+        }
+
+        const imageCount = pendingImages.length;
+        const mkdirCommand = `node -e "require('fs').mkdirSync('.happy-attachments',{recursive:true})"`;
+        await sync.sessionRpc(sessionId, 'bash', { command: mkdirCommand, cwd: '.', timeout: 15000 });
+
+        const attachments: MessageAttachment[] = [];
+        const MAX_RAW_BYTES = 350 * 1024;
+
+        for (let index = 0; index < pendingImages.length; index++) {
+            const image = pendingImages[index];
+            let width = Math.min(image.width ?? 1600, 1600);
             let compress = 0.72;
             let manipulated: ImageManipulator.ImageResult | null = null;
 
             for (let attempt = 0; attempt < 4; attempt++) {
                 manipulated = await ImageManipulator.manipulateAsync(
-                    asset.uri,
+                    image.uri,
                     width ? [{ resize: { width } }] : [],
                     {
                         compress,
@@ -254,50 +287,40 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
             }
 
             if (!manipulated?.base64) {
-                throw new Error('无法读取图片数据');
+                throw new Error(`第 ${index + 1} 张图片读取失败`);
             }
 
-            const uploadPath = `.happy-attachments/happy-image-${Date.now()}.jpg`;
-
-            const mkdirCommand = `node -e "require('fs').mkdirSync('.happy-attachments',{recursive:true})"`;
-            await sync.sessionRpc(sessionId, 'bash', { command: mkdirCommand, cwd: '.', timeout: 15000 });
-
+            const uploadPath = `.happy-attachments/happy-image-${Date.now()}-${index + 1}.jpg`;
             const writeResult = await sync.sessionRpc(sessionId, 'writeFile', {
                 path: uploadPath,
                 content: manipulated.base64,
                 expectedHash: null
             }) as any;
             if (!writeResult?.success) {
-                throw new Error(writeResult?.error || '写入图片文件失败');
+                throw new Error(writeResult?.error || `第 ${index + 1} 张图片写入失败`);
             }
 
-            const instruction = userPrompt.trim()
-                ? userPrompt.trim()
-                : '请分析这张图片并描述其关键信息。';
-
-            const displayText = userPrompt.trim()
-                ? `📷 已发送 1 张图片\n${userPrompt.trim()}`
-                : '📷 已发送 1 张图片';
-
-            if (message.trim()) {
-                setMessage('');
-                clearDraft();
-            }
-
-            await sync.sendMessage(
-                sessionId,
-                instruction,
-                displayText,
-                [{ type: 'image', path: uploadPath, mimeType: 'image/jpeg' }]
-            );
-            trackMessageSent();
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            Modal.alert(t('common.error'), `发送图片失败：${msg}`);
-        } finally {
-            setIsPickingImage(false);
+            attachments.push({ type: 'image', path: uploadPath, mimeType: 'image/jpeg' });
         }
-    }, [clearDraft, isCodexSession, isPickingImage, message, sessionId]);
+
+        const trimmedText = text.trim();
+        const instruction = trimmedText || (imageCount > 1
+            ? '请综合分析这些图片并描述其关键信息。'
+            : '请分析这张图片并描述其关键信息。');
+
+        const displayText = trimmedText
+            ? `📷 已发送 ${imageCount} 张图片\n${trimmedText}`
+            : `📷 已发送 ${imageCount} 张图片`;
+
+        await sync.sendMessage(
+            sessionId,
+            instruction,
+            displayText,
+            attachments
+        );
+        setPendingImages([]);
+        return true;
+    }, [isCodexSession, pendingImages, sessionId]);
 
     // Handle dismissing CLI version warning
     const handleDismissCliWarning = React.useCallback(() => {
@@ -317,9 +340,33 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     }, [sessionId]);
 
     // Function to update model mode
-    const updateModelMode = React.useCallback((mode: 'default' | 'gpt-5.3-codex' | 'gpt-5-codex-high' | 'gpt-5-codex-medium' | 'gpt-5-codex-low' | 'gpt-5-minimal' | 'gpt-5-low' | 'gpt-5-medium' | 'gpt-5-high' | 'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite') => {
+    const updateModelMode = React.useCallback((mode: string) => {
         storage.getState().updateSessionModelMode(sessionId, mode);
     }, [sessionId]);
+
+    React.useEffect(() => {
+        if (!isCodexSession) {
+            return;
+        }
+
+        let cancelled = false;
+        const run = async () => {
+            try {
+                const models = await fetchCodexModelsForSession(sessionId);
+                if (!cancelled && models.length > 0) {
+                    setCodexModels(models);
+                }
+            } catch {
+                // Keep fallback list
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isCodexSession, sessionId]);
 
     // Memoize header-dependent styles to prevent re-renders
     const headerDependentStyles = React.useMemo(() => ({
@@ -393,17 +440,21 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     ) : null;
 
     const input = (
-        <AgentInput
-            placeholder={t('session.inputPlaceholder')}
-            value={message}
-            onChangeText={setMessage}
-            sessionId={sessionId}
-            onPickImage={pickAndSendImageToCodex}
-            isPickingImage={isPickingImage}
-            permissionMode={permissionMode}
-            onPermissionModeChange={updatePermissionMode}
-            modelMode={modelMode as any}
-            onModelModeChange={updateModelMode as any}
+            <AgentInput
+                placeholder={t('session.inputPlaceholder')}
+                value={message}
+                onChangeText={setMessage}
+                sessionId={sessionId}
+                onPickImage={pickImagesForCodex}
+                isPickingImage={isPickingImage}
+                pendingImageCount={pendingImages.length}
+                pendingImages={pendingImages.map((item) => ({ id: item.id, uri: item.uri }))}
+                onRemovePendingImage={removePendingImage}
+                permissionMode={permissionMode}
+                onPermissionModeChange={updatePermissionMode}
+                modelMode={modelMode as any}
+                onModelModeChange={updateModelMode as any}
+                codexModelOptions={codexModels}
             metadata={session.metadata}
             connectionStatus={{
                 text: sessionStatus.statusText,
@@ -412,12 +463,30 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 isPulsing: sessionStatus.isPulsing
             }}
             onSend={() => {
-                if (message.trim()) {
-                    setMessage('');
-                    clearDraft();
-                    sync.sendMessage(sessionId, message);
-                    trackMessageSent();
-                }
+                const run = async () => {
+                    try {
+                        if (pendingImages.length > 0) {
+                            const textToSend = message;
+                            setMessage('');
+                            clearDraft();
+                            await sendPendingImages(textToSend);
+                            trackMessageSent();
+                            return;
+                        }
+
+                        if (message.trim()) {
+                            setMessage('');
+                            clearDraft();
+                            await sync.sendMessage(sessionId, message);
+                            trackMessageSent();
+                        }
+                    } catch (error) {
+                        const msg = error instanceof Error ? error.message : String(error);
+                        Modal.alert(t('common.error'), `发送图片失败：${msg}`);
+                    }
+                };
+
+                void run();
             }}
             onMicPress={micButtonState.onMicPress}
             isMicActive={micButtonState.isMicActive}

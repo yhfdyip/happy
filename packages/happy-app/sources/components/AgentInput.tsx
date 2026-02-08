@@ -23,6 +23,7 @@ import { t } from '@/text';
 import { Metadata } from '@/sync/storageTypes';
 import { AIBackendProfile, getProfileEnvironmentVariables, validateProfileForAgent } from '@/sync/settings';
 import { getBuiltInProfile } from '@/sync/profileUtils';
+import { DynamicModelOption, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
 
 interface AgentInputProps {
     value: string;
@@ -32,6 +33,9 @@ interface AgentInputProps {
     onSend: () => void;
     onPickImage?: () => void | Promise<void>;
     isPickingImage?: boolean;
+    pendingImageCount?: number;
+    pendingImages?: { id: string; uri: string }[];
+    onRemovePendingImage?: (imageId: string) => void;
     sendIcon?: React.ReactNode;
     onMicPress?: () => void;
     isMicActive?: boolean;
@@ -39,6 +43,7 @@ interface AgentInputProps {
     onPermissionModeChange?: (mode: PermissionMode) => void;
     modelMode?: ModelMode;
     onModelModeChange?: (mode: ModelMode) => void;
+    codexModelOptions?: DynamicModelOption[];
     metadata?: Metadata | null;
     onAbort?: () => void | Promise<void>;
     showAbortButton?: boolean;
@@ -300,12 +305,20 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     const screenWidth = useWindowDimensions().width;
 
     const hasText = props.value.trim().length > 0;
+    const hasPendingImages = (props.pendingImageCount || 0) > 0;
+    const hasSendPayload = hasText || hasPendingImages;
 
     // Check if this is a Codex or Gemini session
     // Use metadata.flavor for existing sessions, agentType prop for new sessions
     const isCodex = props.metadata?.flavor === 'codex' || props.agentType === 'codex';
     const isGemini = props.metadata?.flavor === 'gemini' || props.agentType === 'gemini';
     const canPickImage = !!props.sessionId && !!props.onPickImage && isCodex;
+    const codexModelOptions = React.useMemo(() => {
+        if (props.codexModelOptions && props.codexModelOptions.length > 0) {
+            return props.codexModelOptions;
+        }
+        return getStaticCodexFallbackModels();
+    }, [props.codexModelOptions]);
 
     // Profile data
     const profiles = useSetting('profiles');
@@ -470,7 +483,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         // Original key handling
         if (Platform.OS === 'web') {
             if (agentInputEnterToSend && event.key === 'Enter' && !event.shiftKey) {
-                if (props.value.trim()) {
+                if (hasSendPayload) {
                     props.onSend();
                     return true; // Key was handled
                 }
@@ -489,7 +502,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
 
         }
         return false; // Key was not handled
-    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, props.value, props.onSend, props.permissionMode, props.onPermissionModeChange]);
+    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, hasSendPayload, props.onSend, props.permissionMode, props.onPermissionModeChange]);
 
 
 
@@ -688,18 +701,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             );
                                         })
                                     ) : isCodex ? (
-                                        (['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'] as const).map((model) => {
-                                            const modelConfig = {
-                                                'gpt-5.3-codex': { label: 'GPT-5.3 Codex (Latest)' },
-                                                'gpt-5-codex-high': { label: t('agentInput.codexModel.gpt5CodexHigh') },
-                                                'gpt-5-codex-medium': { label: t('agentInput.codexModel.gpt5CodexMedium') },
-                                                'gpt-5-codex-low': { label: t('agentInput.codexModel.gpt5CodexLow') },
-                                                'gpt-5-minimal': { label: t('agentInput.codexModel.gpt5Minimal') },
-                                                'gpt-5-low': { label: t('agentInput.codexModel.gpt5Low') },
-                                                'gpt-5-medium': { label: t('agentInput.codexModel.gpt5Medium') },
-                                                'gpt-5-high': { label: t('agentInput.codexModel.gpt5High') },
-                                            };
-                                            const config = modelConfig[model];
+                                        codexModelOptions.map((modelOption) => {
+                                            const model = modelOption.id;
                                             const isSelected = props.modelMode === model;
 
                                             return (
@@ -707,7 +710,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                                     key={model}
                                                     onPress={() => {
                                                         hapticsLight();
-                                                        props.onModelModeChange?.(model);
+                                                        props.onModelModeChange?.(model as ModelMode);
                                                     }}
                                                     style={({ pressed }) => ({
                                                         flexDirection: 'row',
@@ -741,7 +744,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                                         color: isSelected ? theme.colors.radio.active : theme.colors.text,
                                                         ...Typography.default()
                                                     }}>
-                                                        {config.label}
+                                                        {modelOption.label}
                                                     </Text>
                                                 </Pressable>
                                             );
@@ -992,6 +995,61 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
 
                 {/* Box 2: Action Area (Input + Send) */}
                 <View style={styles.unifiedPanel}>
+                    {props.pendingImages && props.pendingImages.length > 0 && (
+                        <View style={{
+                            paddingHorizontal: 8,
+                            paddingTop: 6,
+                            paddingBottom: 4,
+                        }}>
+                            <View style={{
+                                flexDirection: 'row',
+                                flexWrap: 'wrap',
+                                gap: 8,
+                            }}>
+                                {props.pendingImages.map((image) => (
+                                    <View
+                                        key={image.id}
+                                        style={{
+                                            width: 64,
+                                            height: 64,
+                                            borderRadius: 8,
+                                            overflow: 'hidden',
+                                            position: 'relative',
+                                            backgroundColor: theme.colors.surfacePressed,
+                                        }}
+                                    >
+                                        <RNImage
+                                            source={{ uri: image.uri }}
+                                            style={{ width: '100%', height: '100%' }}
+                                            resizeMode="cover"
+                                        />
+                                        <Pressable
+                                            onPress={() => {
+                                                hapticsLight();
+                                                props.onRemovePendingImage?.(image.id);
+                                            }}
+                                            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                                            style={(p) => ({
+                                                position: 'absolute',
+                                                top: 4,
+                                                right: 4,
+                                                width: 18,
+                                                height: 18,
+                                                borderRadius: 9,
+                                                backgroundColor: 'rgba(0,0,0,0.65)',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                opacity: p.pressed ? 0.7 : 1,
+                                            })}
+                                        >
+                                            <Ionicons name="close" size={12} color="#fff" />
+                                        </Pressable>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
+                    )}
+
                     {/* Input field */}
                     <View style={[styles.inputContainer, props.minHeight ? { minHeight: props.minHeight } : undefined]}>
                         <MultiTextInput
@@ -1187,7 +1245,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 <View
                                     style={[
                                         styles.sendButton,
-                                        (hasText || props.isSending || (props.onMicPress && !props.isMicActive))
+                                        (hasSendPayload || props.isSending || (props.onMicPress && !props.isMicActive))
                                             ? styles.sendButtonActive
                                             : styles.sendButtonInactive
                                     ]}
@@ -1203,20 +1261,20 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
                                         onPress={() => {
                                             hapticsLight();
-                                            if (hasText) {
+                                            if (hasSendPayload) {
                                                 props.onSend();
                                             } else {
                                                 props.onMicPress?.();
                                             }
                                         }}
-                                        disabled={props.isSendDisabled || props.isSending || props.isPickingImage || (!hasText && !props.onMicPress)}
+                                        disabled={props.isSendDisabled || props.isSending || props.isPickingImage || (!hasSendPayload && !props.onMicPress)}
                                     >
                                         {props.isSending ? (
                                             <ActivityIndicator
                                                 size="small"
                                                 color={theme.colors.button.primary.tint}
                                             />
-                                        ) : hasText ? (
+                                        ) : hasSendPayload ? (
                                             <Octicons
                                                 name="arrow-up"
                                                 size={16}

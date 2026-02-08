@@ -274,7 +274,8 @@ class Sync {
                 'gpt-5-high': 'gpt-5.2'
             };
 
-            model = codexModelAliasMap[modelMode] || null;
+            // Dynamic models (fetched from provider) pass through directly.
+            model = codexModelAliasMap[modelMode] || modelMode;
         }
         const fallbackModel: string | null = null;
 

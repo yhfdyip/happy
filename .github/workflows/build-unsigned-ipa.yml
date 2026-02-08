@@ -162,14 +162,11 @@ jobs:
 
           cd "$RUNNER_TEMP/ipa"
           zip -r -y "$GITHUB_WORKSPACE/Happydev-unsigned.ipa" Payload
-          shasum -a 256 "$GITHUB_WORKSPACE/Happydev-unsigned.ipa" > "$GITHUB_WORKSPACE/Happydev-unsigned.ipa.sha256"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: happy-app-unsigned-ipa
-          path: |
-            Happydev-unsigned.ipa
-            Happydev-unsigned.ipa.sha256
+          path: Happydev-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
