@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { machineSpawnNewSession } from '@/sync/ops';
 import { Modal } from '@/modal';
 import { sync } from '@/sync/sync';
-import { DynamicModelOption, fetchCodexModelsForMachine, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
+import { DynamicModelOption, fetchCodexModelsForMachine } from '@/sync/dynamicModels';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { createWorktree } from '@/utils/createWorktree';
 import { getTempData, type NewSessionData } from '@/utils/tempDataStore';
@@ -369,12 +369,11 @@ function NewSessionWizard() {
 
     const [modelMode, setModelMode] = React.useState<ModelMode>(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['gpt-5.3-codex', 'gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high', 'gpt-5.2-codex', 'gpt-5.2', 'gpt-5-codex', 'gpt-5'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
         if (lastUsedModelMode) {
-            if (agentType === 'codex' && validCodexModes.includes(lastUsedModelMode as ModelMode)) {
+            if (agentType === 'codex') {
                 return lastUsedModelMode as ModelMode;
             } else if (agentType === 'claude' && validClaudeModes.includes(lastUsedModelMode as ModelMode)) {
                 return lastUsedModelMode as ModelMode;
@@ -382,9 +381,9 @@ function NewSessionWizard() {
                 return lastUsedModelMode as ModelMode;
             }
         }
-        return agentType === 'codex' ? 'gpt-5.3-codex' : agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
+        return agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
     });
-    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>(() => getStaticCodexFallbackModels());
+    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>([]);
 
     // Session details state
     const [selectedMachineId, setSelectedMachineId] = React.useState<string | null>(() => {
@@ -723,9 +722,7 @@ function NewSessionWizard() {
     // Reset model mode when agent type changes to appropriate default
     React.useEffect(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const dynamicCodexModes = codexModels.map((item) => item.id);
-        const staticCodexAliases = ['gpt-5-codex-high', 'gpt-5-codex-medium', 'gpt-5-codex-low', 'gpt-5-minimal', 'gpt-5-low', 'gpt-5-medium', 'gpt-5-high'];
-        const validCodexModes: ModelMode[] = [...new Set([...dynamicCodexModes, ...staticCodexAliases])] as ModelMode[];
+        const validCodexModes: ModelMode[] = ['default', ...codexModels.map((item) => item.id)] as ModelMode[];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -741,7 +738,7 @@ function NewSessionWizard() {
         if (!isValidForCurrentAgent) {
             // Set appropriate default for each agent type
             if (agentType === 'codex') {
-                setModelMode((codexModels[0]?.id as ModelMode) || 'gpt-5.3-codex');
+                setModelMode('default');
             } else if (agentType === 'gemini') {
                 setModelMode('gemini-2.5-pro');
             } else {
@@ -759,11 +756,13 @@ function NewSessionWizard() {
         const run = async () => {
             try {
                 const models = await fetchCodexModelsForMachine(selectedMachineId);
-                if (!cancelled && models.length > 0) {
+                if (!cancelled) {
                     setCodexModels(models);
                 }
             } catch {
-                // Keep fallback list
+                if (!cancelled) {
+                    setCodexModels([]);
+                }
             }
         };
 

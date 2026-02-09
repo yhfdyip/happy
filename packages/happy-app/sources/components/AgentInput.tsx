@@ -23,7 +23,7 @@ import { t } from '@/text';
 import { Metadata } from '@/sync/storageTypes';
 import { AIBackendProfile, getProfileEnvironmentVariables, validateProfileForAgent } from '@/sync/settings';
 import { getBuiltInProfile } from '@/sync/profileUtils';
-import { DynamicModelOption, getStaticCodexFallbackModels } from '@/sync/dynamicModels';
+import { DynamicModelOption } from '@/sync/dynamicModels';
 import { tracking } from '@/track';
 
 interface AgentInputProps {
@@ -316,10 +316,15 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     const isGemini = props.metadata?.flavor === 'gemini' || props.agentType === 'gemini';
     const canPickImage = !!props.sessionId && !!props.onPickImage && isCodex;
     const codexModelOptions = React.useMemo(() => {
-        if (props.codexModelOptions && props.codexModelOptions.length > 0) {
-            return props.codexModelOptions;
-        }
-        return getStaticCodexFallbackModels();
+        const cliOptions = (props.codexModelOptions || []).filter((item) => item.id !== 'default');
+        return [
+            {
+                id: 'default',
+                label: t('agentInput.codexPermissionMode.default'),
+                description: t('agentInput.model.configureInCli'),
+            },
+            ...cliOptions,
+        ];
     }, [props.codexModelOptions]);
 
     // Profile data

@@ -227,11 +227,11 @@ class Sync {
         // Read permission mode from session state
         const permissionMode = session.permissionMode || 'default';
         
-        // Read model mode - for Gemini/Codex, default to explicit model if not set
+        // Read model mode - Gemini defaults to explicit model, Codex uses CLI default unless user selected one
         const flavor = session.metadata?.flavor;
         const isGemini = flavor === 'gemini';
         const isCodex = flavor === 'codex';
-        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : isCodex ? 'gpt-5.3-codex' : 'default');
+        const modelMode = session.modelMode || (isGemini ? 'gemini-2.5-pro' : 'default');
 
         // Generate local ID
         const localId = randomUUID();
@@ -255,27 +255,13 @@ class Sync {
 
         // Model settings:
         // - Gemini: pass selected model directly
-        // - Codex: map historical app aliases to currently supported model IDs
+        // - Codex: pass selected CLI-returned model, or null to use CLI default
         let model: string | null = null;
         if (isGemini && modelMode !== 'default') {
             // For Gemini ACP, pass the selected model to CLI
             model = modelMode;
         } else if (isCodex && modelMode !== 'default') {
-            const codexModelAliasMap: Record<string, string> = {
-                // Current explicit model
-                'gpt-5.3-codex': 'gpt-5.3-codex',
-                // Legacy app aliases (mapped to currently supported IDs)
-                'gpt-5-codex-high': 'gpt-5.3-codex',
-                'gpt-5-codex-medium': 'gpt-5.2-codex',
-                'gpt-5-codex-low': 'gpt-5.2-codex',
-                'gpt-5-minimal': 'gpt-5.2',
-                'gpt-5-low': 'gpt-5.2',
-                'gpt-5-medium': 'gpt-5.2',
-                'gpt-5-high': 'gpt-5.2'
-            };
-
-            // Dynamic models (fetched from provider) pass through directly.
-            model = codexModelAliasMap[modelMode] || modelMode;
+            model = modelMode;
         }
         const fallbackModel: string | null = null;
 
