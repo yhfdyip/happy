@@ -65,7 +65,8 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
     const customAgentId = settings.elevenLabsAgentId?.trim() || undefined;
     const customApiKey = settings.elevenLabsApiKey?.trim() || undefined;
     const hasCustomAgentCredentials = !!customAgentId && !!customApiKey;
-    const shouldUseTokenFlow = experimentsEnabled || hasCustomAgentCredentials;
+    const shouldUseCustomDirectFlow = useCustomAgent && hasCustomAgentCredentials;
+    const shouldUseTokenFlow = experimentsEnabled && !shouldUseCustomDirectFlow;
     const configuredAgentId = __DEV__ ? config.elevenLabsAgentIdDev : config.elevenLabsAgentIdProd;
 
     tracking?.capture('voice_start_step', {
@@ -74,6 +75,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         experimentsEnabled,
         useCustomAgent,
         hasCustomAgentCredentials,
+        shouldUseCustomDirectFlow,
         hasConfiguredAgentId: !!configuredAgentId,
         shouldUseTokenFlow,
     });
@@ -82,6 +84,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         experimentsEnabled,
         useCustomAgent,
         hasCustomAgentCredentials,
+        shouldUseCustomDirectFlow,
         hasConfiguredAgentId: !!configuredAgentId,
         shouldUseTokenFlow,
     });
@@ -95,6 +98,32 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             voiceTrace('custom_credentials_missing', { sessionId });
             storage.getState().setRealtimeStatus('error');
             Modal.alert(t('common.error'), t('settingsVoice.credentialsRequired'));
+            return;
+        }
+
+        // Custom agent path: if user provided credentials, start directly with custom agent ID.
+        // Do not call backend token endpoint for this mode.
+        if (shouldUseCustomDirectFlow && customAgentId) {
+            tracking?.capture('voice_start_step', {
+                step: 'custom_direct_start_attempt',
+                sessionId,
+            });
+            voiceTrace('custom_direct_start_attempt', { sessionId });
+
+            await voiceSession.startSession({
+                sessionId,
+                initialContext,
+                agentId: customAgentId,
+            });
+
+            tracking?.capture('voice_start_step', {
+                step: 'custom_direct_start_success',
+                sessionId,
+            });
+            voiceTrace('custom_direct_start_success', { sessionId });
+
+            currentSessionId = sessionId;
+            voiceSessionStarted = true;
             return;
         }
 
@@ -135,7 +164,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             return;
         }
         
-        // Experiments/custom-agent path = authenticated token flow
+        // Experiments path = authenticated token flow
         const credentials = await TokenStorage.getCredentials();
         if (!credentials) {
             tracking?.capture('voice_start_step', {
@@ -186,45 +215,6 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                     sessionId,
                     backendError: response.error,
                 });
-
-                // Fallback path for custom agents:
-                // if token endpoint fails (e.g. 500/server not upgraded), try direct agent start.
-                if (useCustomAgent && customAgentId) {
-                    tracking?.capture('voice_start_step', {
-                        step: 'token_error_custom_direct_fallback_attempt',
-                        sessionId,
-                    });
-                    voiceTrace('token_error_custom_direct_fallback_attempt', { sessionId });
-
-                    try {
-                        await voiceSession.startSession({
-                            sessionId,
-                            initialContext,
-                            agentId: customAgentId,
-                        });
-
-                        currentSessionId = sessionId;
-                        voiceSessionStarted = true;
-
-                        tracking?.capture('voice_start_step', {
-                            step: 'token_error_custom_direct_fallback_success',
-                            sessionId,
-                        });
-                        voiceTrace('token_error_custom_direct_fallback_success', { sessionId });
-                        return;
-                    } catch (fallbackError) {
-                        console.error('Custom direct fallback failed:', fallbackError);
-                        tracking?.capture('voice_start_step', {
-                            step: 'token_error_custom_direct_fallback_failed',
-                            sessionId,
-                            error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
-                        });
-                        voiceTrace('token_error_custom_direct_fallback_failed', {
-                            sessionId,
-                            error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
-                        });
-                    }
-                }
 
                 storage.getState().setRealtimeStatus('error');
                 Modal.alert(t('common.error'), response.error);

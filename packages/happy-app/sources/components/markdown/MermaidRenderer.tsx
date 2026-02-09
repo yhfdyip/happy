@@ -107,14 +107,29 @@ const MermaidRendererWeb = React.memo((props: MermaidRendererProps) => {
 const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
     const { theme } = useUnistyles();
     const [height, setHeight] = React.useState(200);
+    const [hasLoaded, setHasLoaded] = React.useState(false);
     const [isReady, setIsReady] = React.useState(false);
     const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
     React.useEffect(() => {
         setHeight(200);
+        setHasLoaded(false);
         setIsReady(false);
         setErrorMessage(null);
     }, [props.content]);
+
+    React.useEffect(() => {
+        if (isReady || errorMessage) {
+            return;
+        }
+
+        const timeout = setTimeout(() => {
+            setErrorMessage('Mermaid render timeout');
+            setIsReady(false);
+        }, 7000);
+
+        return () => clearTimeout(timeout);
+    }, [isReady, errorMessage, props.content]);
 
     const html = React.useMemo(() => {
         const safeContent = JSON.stringify(props.content).replace(/<\//g, '<\\/');
@@ -142,6 +157,18 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
                         height: auto;
                         max-width: 100%;
                     }
+                    .mermaid-fallback {
+                        width: 100%;
+                        margin: 0;
+                        padding: 12px;
+                        border-radius: 4px;
+                        background-color: rgba(127, 127, 127, 0.12);
+                        color: ${theme.colors.text};
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        box-sizing: border-box;
+                        font-family: Menlo, Monaco, Consolas, 'Courier New', monospace;
+                    }
                 </style>
                 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
             </head>
@@ -150,6 +177,19 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
                 <script>
                     (function () {
                         const definition = ${safeContent};
+
+                        function showFallback() {
+                            const container = document.getElementById('mermaid-container');
+                            if (!container) {
+                                return;
+                            }
+
+                            container.innerHTML = '<pre class="mermaid-fallback"></pre>';
+                            const fallback = container.querySelector('.mermaid-fallback');
+                            if (fallback) {
+                                fallback.textContent = definition;
+                            }
+                        }
 
                         function postMessage(payload) {
                             if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -192,6 +232,8 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
                                 reportDimensions();
                                 postMessage({ type: 'ready' });
                             } catch (error) {
+                                showFallback();
+                                reportDimensions();
                                 postMessage({
                                     type: 'error',
                                     message: error && error.message ? error.message : String(error),
@@ -212,6 +254,8 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
                             const container = document.getElementById('mermaid-container');
                             const hasSvg = container && container.querySelector('svg');
                             if (!hasSvg) {
+                                showFallback();
+                                reportDimensions();
                                 postMessage({ type: 'error', message: 'Mermaid render timeout' });
                             }
                         }, 5000);
@@ -258,6 +302,10 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
         setIsReady(false);
     }, []);
 
+    const onWebViewLoadEnd = React.useCallback(() => {
+        setHasLoaded(true);
+    }, []);
+
     if (errorMessage) {
         return (
             <View style={[style.container, style.errorContainer]}>
@@ -286,8 +334,9 @@ const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
                     onMessage={onMessage}
                     onError={onWebViewError}
                     onHttpError={onWebViewError}
+                    onLoadEnd={onWebViewLoadEnd}
                 />
-                {!isReady && (
+                {!isReady && !errorMessage && !hasLoaded && (
                     <View style={style.loadingOverlay} pointerEvents="none">
                         <View style={style.loadingPlaceholder} />
                     </View>
