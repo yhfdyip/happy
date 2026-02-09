@@ -53,9 +53,14 @@ export const IGNORED_COMMANDS = [
 ];
 
 // Default commands always available
-const DEFAULT_COMMANDS: CommandItem[] = [
+const BASE_DEFAULT_COMMANDS: CommandItem[] = [
     { command: 'compact', description: 'Compact the conversation history' },
     { command: 'clear', description: 'Clear the conversation' }
+];
+
+// Agent-specific default commands
+const CODEX_DEFAULT_COMMANDS: CommandItem[] = [
+    { command: 'plan', description: 'Switch Codex to plan mode' }
 ];
 
 // Command descriptions for known tools/commands
@@ -66,6 +71,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
     // Common tool commands
     help: 'Show available commands',
     clear: 'Clear the conversation',
+    plan: 'Switch to plan mode',
     reset: 'Reset the session',
     export: 'Export conversation',
     debug: 'Show debug information',
@@ -81,15 +87,19 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
 function getCommandsFromSession(sessionId: string): CommandItem[] {
     const state = storage.getState();
     const session = state.sessions[sessionId];
-    if (!session || !session.metadata) {
-        return DEFAULT_COMMANDS;
+    if (!session) {
+        return BASE_DEFAULT_COMMANDS;
     }
 
-    const commands: CommandItem[] = [...DEFAULT_COMMANDS];
+    const commands: CommandItem[] = [...BASE_DEFAULT_COMMANDS];
+    if (session.metadata?.flavor === 'codex') {
+        commands.push(...CODEX_DEFAULT_COMMANDS);
+    }
     
     // Add commands from metadata.slashCommands (filter with ignore list)
-    if (session.metadata.slashCommands) {
-        for (const cmd of session.metadata.slashCommands) {
+    const slashCommands = session.metadata?.slashCommands;
+    if (slashCommands) {
+        for (const cmd of slashCommands) {
             // Skip if in ignore list
             if (IGNORED_COMMANDS.includes(cmd)) continue;
             
