@@ -16,20 +16,6 @@ interface SearchOptions {
     threshold?: number;
 }
 
-function getDefaultCommands(flavor?: string | null): CommandItem[] {
-    const baseCommands: CommandItem[] = [
-        { command: 'compact', description: 'Compact the conversation history' },
-        { command: 'clear', description: 'Clear the conversation' }
-    ];
-
-    // Plan mode is available for Claude and Codex sessions.
-    if (flavor !== 'gemini') {
-        baseCommands.push({ command: 'plan', description: 'Switch to plan mode' });
-    }
-
-    return baseCommands;
-}
-
 // Commands to ignore/filter out
 export const IGNORED_COMMANDS = [
     "add-dir",
@@ -66,11 +52,16 @@ export const IGNORED_COMMANDS = [
     "login"
 ];
 
+// Default commands always available
+const DEFAULT_COMMANDS: CommandItem[] = [
+    { command: 'compact', description: 'Compact the conversation history' },
+    { command: 'clear', description: 'Clear the conversation' }
+];
+
 // Command descriptions for known tools/commands
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
     // Default commands
     compact: 'Compact the conversation history',
-    plan: 'Switch to plan mode',
     
     // Common tool commands
     help: 'Show available commands',
@@ -90,13 +81,11 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
 function getCommandsFromSession(sessionId: string): CommandItem[] {
     const state = storage.getState();
     const session = state.sessions[sessionId];
-    const defaultCommands = getDefaultCommands(session?.metadata?.flavor);
-
     if (!session || !session.metadata) {
-        return defaultCommands;
+        return DEFAULT_COMMANDS;
     }
 
-    const commands: CommandItem[] = [...defaultCommands];
+    const commands: CommandItem[] = [...DEFAULT_COMMANDS];
     
     // Add commands from metadata.slashCommands (filter with ignore list)
     if (session.metadata.slashCommands) {
