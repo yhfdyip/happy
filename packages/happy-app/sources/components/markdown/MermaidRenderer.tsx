@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View, Platform, Text } from 'react-native';
-import { WebView } from 'react-native-webview';
+import WebView from 'react-native-webview';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
 import { t } from '@/text';
@@ -13,157 +13,285 @@ const webStyle: any = {
     overflow: 'auto',
 };
 
-// Mermaid render component that works on all platforms
-export const MermaidRenderer = React.memo((props: {
+type MermaidRendererProps = {
     content: string;
-}) => {
-    const { theme } = useUnistyles();
-    const [dimensions, setDimensions] = React.useState({ width: 0, height: 200 });
-    const [svgContent, setSvgContent] = React.useState<string | null>(null);
+};
 
-    const onLayout = React.useCallback((event: any) => {
-        const { width } = event.nativeEvent.layout;
-        setDimensions(prev => ({ ...prev, width }));
-    }, []);
-
-    // Web platform uses direct SVG rendering for better performance and native DOM integration
+// Mermaid render component that works on all platforms
+export const MermaidRenderer = React.memo((props: MermaidRendererProps) => {
     if (Platform.OS === 'web') {
-        const [hasError, setHasError] = React.useState(false);
+        return <MermaidRendererWeb content={props.content} />;
+    }
 
-        React.useEffect(() => {
-            let isMounted = true;
-            setHasError(false);
+    return <MermaidRendererNative content={props.content} />;
+});
 
-            const renderMermaid = async () => {
-                try {
-                    const mermaidModule: any = await import('mermaid');
-                    const mermaid = mermaidModule.default || mermaidModule;
+const MermaidRendererWeb = React.memo((props: MermaidRendererProps) => {
+    const [svgContent, setSvgContent] = React.useState<string | null>(null);
+    const [hasError, setHasError] = React.useState(false);
 
-                    if (mermaid.initialize) {
-                        mermaid.initialize({
-                            startOnLoad: false,
-                            theme: 'dark'
-                        });
-                    }
+    React.useEffect(() => {
+        let isMounted = true;
+        setHasError(false);
+        setSvgContent(null);
 
-                    if (mermaid.render) {
-                        const { svg } = await mermaid.render(
-                            `mermaid-${Date.now()}`,
-                            props.content
-                        );
+        const renderMermaid = async () => {
+            try {
+                const mermaidModule: any = await import('mermaid');
+                const mermaid = mermaidModule.default || mermaidModule;
 
-                        if (isMounted) {
-                            setSvgContent(svg);
-                        }
-                    }
-                } catch (error) {
+                if (mermaid.initialize) {
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        theme: 'dark',
+                    });
+                }
+
+                if (mermaid.render) {
+                    const { svg } = await mermaid.render(
+                        `mermaid-${Date.now()}`,
+                        props.content,
+                    );
+
                     if (isMounted) {
-                        console.warn(`[Mermaid] ${t('markdown.mermaidRenderFailed')}: ${error instanceof Error ? error.message : String(error)}`);
-                        setHasError(true);
+                        setSvgContent(svg);
                     }
                 }
-            };
+            } catch (error) {
+                if (isMounted) {
+                    console.warn(`[Mermaid] ${t('markdown.mermaidRenderFailed')}: ${error instanceof Error ? error.message : String(error)}`);
+                    setHasError(true);
+                }
+            }
+        };
 
-            renderMermaid();
+        renderMermaid();
 
-            return () => {
-                isMounted = false;
-            };
-        }, [props.content]);
+        return () => {
+            isMounted = false;
+        };
+    }, [props.content]);
 
-        if (hasError) {
-            return (
-                <View style={[style.container, style.errorContainer]}>
-                    <View style={style.errorContent}>
-                        <Text style={style.errorText}>Mermaid diagram syntax error</Text>
-                        <View style={style.codeBlock}>
-                            <Text style={style.codeText}>{props.content}</Text>
-                        </View>
+    if (hasError) {
+        return (
+            <View style={[style.container, style.errorContainer]}>
+                <View style={style.errorContent}>
+                    <Text style={style.errorText}>{t('markdown.mermaidRenderFailed')}</Text>
+                    <View style={style.codeBlock}>
+                        <Text style={style.codeText}>{props.content}</Text>
                     </View>
                 </View>
-            );
-        }
-
-        if (!svgContent) {
-            return (
-                <View style={[style.container, style.loadingContainer]}>
-                    <View style={style.loadingPlaceholder} />
-                </View>
-            );
-        }
-
-        return (
-            <View style={style.container}>
-                {/* @ts-ignore - Web only */}
-                <div
-                    style={webStyle}
-                    dangerouslySetInnerHTML={{ __html: svgContent }}
-                />
             </View>
         );
     }
 
-    // For iOS/Android, use WebView
-    const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-            <style>
-                body {
-                    margin: 0;
-                    padding: 16px;
-                    background-color: ${theme.colors.surfaceHighest};
-                }
-                #mermaid-container {
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    width: 100%;
-                }
-                .mermaid {
-                    text-align: center;
-                    width: 100%;
-                }
-                .mermaid svg {
-                    max-width: 100%;
-                    height: auto;
-                }
-            </style>
-        </head>
-        <body>
-            <div id="mermaid-container" class="mermaid">
-                ${props.content}
-            </div>
-            <script>
-                mermaid.initialize({
-                    startOnLoad: true,
-                    theme: 'dark'
-                });
-            </script>
-        </body>
-        </html>
-    `;
+    if (!svgContent) {
+        return (
+            <View style={[style.container, style.loadingContainer]}>
+                <View style={style.loadingPlaceholder} />
+            </View>
+        );
+    }
 
     return (
-        <View style={style.container} onLayout={onLayout}>
-            <View style={[style.innerContainer, { height: dimensions.height }]}>
+        <View style={style.container}>
+            {/* @ts-ignore - Web only */}
+            <div
+                style={webStyle}
+                dangerouslySetInnerHTML={{ __html: svgContent }}
+            />
+        </View>
+    );
+});
+
+const MermaidRendererNative = React.memo((props: MermaidRendererProps) => {
+    const { theme } = useUnistyles();
+    const [height, setHeight] = React.useState(200);
+    const [isReady, setIsReady] = React.useState(false);
+    const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+
+    React.useEffect(() => {
+        setHeight(200);
+        setIsReady(false);
+        setErrorMessage(null);
+    }, [props.content]);
+
+    const html = React.useMemo(() => {
+        const safeContent = JSON.stringify(props.content).replace(/<\//g, '<\\/');
+
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+                <style>
+                    body {
+                        margin: 0;
+                        padding: 16px;
+                        background-color: ${theme.colors.surfaceHighest};
+                    }
+                    #mermaid-container {
+                        width: 100%;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                    }
+                    #mermaid-container svg {
+                        width: 100%;
+                        height: auto;
+                        max-width: 100%;
+                    }
+                </style>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+            </head>
+            <body>
+                <div id="mermaid-container"></div>
+                <script>
+                    (function () {
+                        const definition = ${safeContent};
+
+                        function postMessage(payload) {
+                            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+                                window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+                            }
+                        }
+
+                        function reportDimensions() {
+                            const container = document.getElementById('mermaid-container');
+                            const svg = container ? container.querySelector('svg') : null;
+                            const svgHeight = svg ? svg.getBoundingClientRect().height : 0;
+                            const height = Math.max(
+                                120,
+                                document.documentElement ? document.documentElement.scrollHeight : 0,
+                                document.body ? document.body.scrollHeight : 0,
+                                container ? container.scrollHeight : 0,
+                                svgHeight + 32
+                            );
+                            postMessage({ type: 'dimensions', height: Math.ceil(height) });
+                        }
+
+                        async function renderMermaid() {
+                            try {
+                                if (!window.mermaid || typeof window.mermaid.render !== 'function') {
+                                    throw new Error('Mermaid script failed to load');
+                                }
+
+                                window.mermaid.initialize({
+                                    startOnLoad: false,
+                                    theme: 'dark',
+                                });
+
+                                const result = await window.mermaid.render('mermaid-' + Date.now(), definition);
+                                const container = document.getElementById('mermaid-container');
+                                if (!container) {
+                                    throw new Error('Mermaid container not found');
+                                }
+
+                                container.innerHTML = result.svg;
+                                reportDimensions();
+                                postMessage({ type: 'ready' });
+                            } catch (error) {
+                                postMessage({
+                                    type: 'error',
+                                    message: error && error.message ? error.message : String(error),
+                                });
+                            }
+                        }
+
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', renderMermaid);
+                        } else {
+                            renderMermaid();
+                        }
+
+                        window.addEventListener('load', reportDimensions);
+                        window.addEventListener('resize', reportDimensions);
+
+                        setTimeout(function () {
+                            const container = document.getElementById('mermaid-container');
+                            const hasSvg = container && container.querySelector('svg');
+                            if (!hasSvg) {
+                                postMessage({ type: 'error', message: 'Mermaid render timeout' });
+                            }
+                        }, 5000);
+                    })();
+                </script>
+            </body>
+            </html>
+        `;
+    }, [props.content, theme.colors.surfaceHighest]);
+
+    const onMessage = React.useCallback((event: any) => {
+        let data: any = null;
+
+        try {
+            data = JSON.parse(event.nativeEvent.data);
+        } catch {
+            return;
+        }
+
+        if (data?.type === 'dimensions' && typeof data.height === 'number' && Number.isFinite(data.height)) {
+            const nextHeight = Math.max(120, Math.min(4096, Math.ceil(data.height)));
+            setHeight((prev) => Math.max(prev, nextHeight));
+            return;
+        }
+
+        if (data?.type === 'ready') {
+            setIsReady(true);
+            setErrorMessage(null);
+            return;
+        }
+
+        if (data?.type === 'error') {
+            const detail = typeof data.message === 'string' ? data.message : t('markdown.mermaidRenderFailed');
+            console.warn(`[Mermaid] ${t('markdown.mermaidRenderFailed')}: ${detail}`);
+            setErrorMessage(detail);
+            setIsReady(false);
+        }
+    }, []);
+
+    const onWebViewError = React.useCallback((event: any) => {
+        const detail = event?.nativeEvent?.description || t('markdown.mermaidRenderFailed');
+        console.warn(`[Mermaid] ${t('markdown.mermaidRenderFailed')}: ${detail}`);
+        setErrorMessage(detail);
+        setIsReady(false);
+    }, []);
+
+    if (errorMessage) {
+        return (
+            <View style={[style.container, style.errorContainer]}>
+                <View style={style.errorContent}>
+                    <Text style={style.errorText}>{t('markdown.mermaidRenderFailed')}</Text>
+                    <Text style={style.errorDetailText}>{errorMessage}</Text>
+                    <View style={style.codeBlock}>
+                        <Text style={style.codeText}>{props.content}</Text>
+                    </View>
+                </View>
+            </View>
+        );
+    }
+
+    return (
+        <View style={style.container}>
+            <View style={[style.innerContainer, { height }]}> 
                 <WebView
                     source={{ html }}
                     style={{ flex: 1 }}
+                    originWhitelist={['*']}
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true}
+                    setSupportMultipleWindows={false}
                     scrollEnabled={false}
-                    onMessage={(event) => {
-                        const data = JSON.parse(event.nativeEvent.data);
-                        if (data.type === 'dimensions') {
-                            setDimensions(prev => ({
-                                ...prev,
-                                height: Math.max(prev.height, data.height)
-                            }));
-                        }
-                    }}
+                    onMessage={onMessage}
+                    onError={onWebViewError}
+                    onHttpError={onWebViewError}
                 />
+                {!isReady && (
+                    <View style={style.loadingOverlay} pointerEvents="none">
+                        <View style={style.loadingPlaceholder} />
+                    </View>
+                )}
             </View>
         </View>
     );
@@ -178,6 +306,7 @@ const style = StyleSheet.create((theme) => ({
         width: '100%',
         backgroundColor: theme.colors.surfaceHighest,
         borderRadius: 8,
+        overflow: 'hidden',
     },
     loadingContainer: {
         justifyContent: 'center',
@@ -204,6 +333,12 @@ const style = StyleSheet.create((theme) => ({
         color: theme.colors.text,
         fontSize: 16,
     },
+    errorDetailText: {
+        ...Typography.default(),
+        color: theme.colors.textSecondary,
+        fontSize: 13,
+        lineHeight: 18,
+    },
     codeBlock: {
         backgroundColor: theme.colors.surfaceHigh,
         borderRadius: 4,
@@ -214,5 +349,15 @@ const style = StyleSheet.create((theme) => ({
         color: theme.colors.text,
         fontSize: 14,
         lineHeight: 20,
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surfaceHighest,
     },
 }));
