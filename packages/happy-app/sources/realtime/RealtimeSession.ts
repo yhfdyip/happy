@@ -8,12 +8,23 @@ import { t } from '@/text';
 import { config } from '@/config';
 import { requestMicrophonePermission, showMicrophonePermissionDeniedAlert } from '@/utils/microphonePermissions';
 import { tracking } from '@/track';
+import { log } from '@/log';
 
 let voiceSession: VoiceSession | null = null;
 let voiceSessionStarted: boolean = false;
 let currentSessionId: string | null = null;
 
+function voiceTrace(step: string, details?: Record<string, unknown>) {
+    if (!details) {
+        log.log(`[VoiceTrace] ${step}`);
+        return;
+    }
+
+    log.log(`[VoiceTrace] ${step} ${JSON.stringify(details)}`);
+}
+
 export async function startRealtimeSession(sessionId: string, initialContext?: string) {
+    voiceTrace('start_called', { sessionId });
     tracking?.capture('voice_start_step', {
         step: 'start_called',
         sessionId,
@@ -21,6 +32,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
 
     if (!voiceSession) {
         console.warn('No voice session registered');
+        voiceTrace('voice_session_missing', { sessionId });
         tracking?.capture('voice_start_step', {
             step: 'voice_session_missing',
             sessionId,
@@ -33,6 +45,10 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
     // Request microphone permission before starting voice session
     // Critical for iOS/Android - first session will fail without this
     const permissionResult = await requestMicrophonePermission();
+    voiceTrace(permissionResult.granted ? 'permission_granted' : 'permission_denied', {
+        sessionId,
+        canAskAgain: permissionResult.canAskAgain ?? null,
+    });
     tracking?.capture('voice_start_step', {
         step: permissionResult.granted ? 'permission_granted' : 'permission_denied',
         sessionId,
@@ -61,6 +77,14 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         hasConfiguredAgentId: !!configuredAgentId,
         shouldUseTokenFlow,
     });
+    voiceTrace('config_resolved', {
+        sessionId,
+        experimentsEnabled,
+        useCustomAgent,
+        hasCustomAgentCredentials,
+        hasConfiguredAgentId: !!configuredAgentId,
+        shouldUseTokenFlow,
+    });
 
     try {
         if (useCustomAgent && !hasCustomAgentCredentials) {
@@ -68,6 +92,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'custom_credentials_missing',
                 sessionId,
             });
+            voiceTrace('custom_credentials_missing', { sessionId });
             storage.getState().setRealtimeStatus('error');
             Modal.alert(t('common.error'), t('settingsVoice.credentialsRequired'));
             return;
@@ -81,6 +106,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                     step: 'configured_agent_missing',
                     sessionId,
                 });
+                voiceTrace('configured_agent_missing', { sessionId });
                 storage.getState().setRealtimeStatus('error');
                 Modal.alert(t('common.error'), t('errors.voiceServiceUnavailable'));
                 return;
@@ -90,6 +116,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'direct_agent_start_attempt',
                 sessionId,
             });
+            voiceTrace('direct_agent_start_attempt', { sessionId });
 
             await voiceSession.startSession({
                 sessionId,
@@ -101,6 +128,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'direct_agent_start_success',
                 sessionId,
             });
+            voiceTrace('direct_agent_start_success', { sessionId });
 
             currentSessionId = sessionId;
             voiceSessionStarted = true;
@@ -114,6 +142,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'auth_credentials_missing',
                 sessionId,
             });
+            voiceTrace('auth_credentials_missing', { sessionId });
             Modal.alert(t('common.error'), t('errors.authenticationFailed'));
             return;
         }
@@ -122,12 +151,20 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             step: 'token_request_attempt',
             sessionId,
         });
+        voiceTrace('token_request_attempt', { sessionId });
 
         const response = await fetchVoiceToken(credentials, sessionId);
         console.log('[Voice] fetchVoiceToken response:', response);
 
         tracking?.capture('voice_start_step', {
             step: 'token_response',
+            sessionId,
+            allowed: !!response.allowed,
+            hasToken: !!response.token,
+            hasResponseAgentId: !!response.agentId,
+            hasError: !!response.error,
+        });
+        voiceTrace('token_response', {
             sessionId,
             allowed: !!response.allowed,
             hasToken: !!response.token,
@@ -143,7 +180,52 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 tracking?.capture('voice_start_step', {
                     step: 'token_not_allowed_with_error',
                     sessionId,
+                    backendError: response.error,
                 });
+                voiceTrace('token_not_allowed_with_error', {
+                    sessionId,
+                    backendError: response.error,
+                });
+
+                // Fallback path for custom agents:
+                // if token endpoint fails (e.g. 500/server not upgraded), try direct agent start.
+                if (useCustomAgent && customAgentId) {
+                    tracking?.capture('voice_start_step', {
+                        step: 'token_error_custom_direct_fallback_attempt',
+                        sessionId,
+                    });
+                    voiceTrace('token_error_custom_direct_fallback_attempt', { sessionId });
+
+                    try {
+                        await voiceSession.startSession({
+                            sessionId,
+                            initialContext,
+                            agentId: customAgentId,
+                        });
+
+                        currentSessionId = sessionId;
+                        voiceSessionStarted = true;
+
+                        tracking?.capture('voice_start_step', {
+                            step: 'token_error_custom_direct_fallback_success',
+                            sessionId,
+                        });
+                        voiceTrace('token_error_custom_direct_fallback_success', { sessionId });
+                        return;
+                    } catch (fallbackError) {
+                        console.error('Custom direct fallback failed:', fallbackError);
+                        tracking?.capture('voice_start_step', {
+                            step: 'token_error_custom_direct_fallback_failed',
+                            sessionId,
+                            error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+                        });
+                        voiceTrace('token_error_custom_direct_fallback_failed', {
+                            sessionId,
+                            error: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+                        });
+                    }
+                }
+
                 storage.getState().setRealtimeStatus('error');
                 Modal.alert(t('common.error'), response.error);
                 return;
@@ -184,6 +266,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'token_session_start_attempt',
                 sessionId,
             });
+            voiceTrace('token_session_start_attempt', { sessionId });
 
             await voiceSession.startSession({
                 sessionId,
@@ -196,6 +279,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'token_session_start_success',
                 sessionId,
             });
+            voiceTrace('token_session_start_success', { sessionId });
         } else {
             // No token (e.g. server not deployed yet) - use agentId directly
             const fallbackAgentId = response.agentId || customAgentId || configuredAgentId;
@@ -204,11 +288,16 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                     step: 'fallback_agent_missing',
                     sessionId,
                 });
+                voiceTrace('fallback_agent_missing', { sessionId });
                 throw new Error('Voice token missing and no fallback agentId configured');
             }
 
             tracking?.capture('voice_start_step', {
                 step: 'fallback_agent_start_attempt',
+                sessionId,
+                source: response.agentId ? 'response' : customAgentId ? 'custom' : 'configured',
+            });
+            voiceTrace('fallback_agent_start_attempt', {
                 sessionId,
                 source: response.agentId ? 'response' : customAgentId ? 'custom' : 'configured',
             });
@@ -223,6 +312,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
                 step: 'fallback_agent_start_success',
                 sessionId,
             });
+            voiceTrace('fallback_agent_start_success', { sessionId });
         }
 
         currentSessionId = sessionId;
@@ -232,6 +322,7 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
             step: 'start_completed',
             sessionId,
         });
+        voiceTrace('start_completed', { sessionId });
     } catch (error) {
         console.error('Failed to start realtime session:', error);
         currentSessionId = null;
@@ -239,6 +330,10 @@ export async function startRealtimeSession(sessionId: string, initialContext?: s
         storage.getState().setRealtimeStatus('error');
         tracking?.capture('voice_start_step', {
             step: 'start_failed',
+            sessionId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        voiceTrace('start_failed', {
             sessionId,
             error: error instanceof Error ? error.message : 'Unknown error',
         });

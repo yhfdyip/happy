@@ -8,6 +8,7 @@ import { EmptyMessages } from '@/components/EmptyMessages';
 import { VoiceAssistantStatusBar } from '@/components/VoiceAssistantStatusBar';
 import { useDraft } from '@/hooks/useDraft';
 import { Modal } from '@/modal';
+import { log } from '@/log';
 import { voiceHooks } from '@/realtime/hooks/voiceHooks';
 import { startRealtimeSession, stopRealtimeSession } from '@/realtime/RealtimeSession';
 import { gitStatusSync } from '@/sync/gitStatusSync';
@@ -420,20 +421,24 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
     // Handle microphone button press - memoized to prevent button flashing
     const handleMicrophonePress = React.useCallback(async () => {
+        log.log(`[VoiceTrace] mic_press_entered ${JSON.stringify({ sessionId, realtimeStatus })}`);
         tracking?.capture('voice_mic_press_handler_entered', {
             sessionId,
             realtimeStatus,
         });
 
         if (realtimeStatus === 'connecting') {
+            log.log(`[VoiceTrace] mic_press_ignored ${JSON.stringify({ sessionId, reason: 'connecting' })}`);
             tracking?.capture('voice_mic_press_ignored', {
                 sessionId,
                 reason: 'connecting',
             });
-            return; // Prevent actions during transitions
+            return;
         }
+
         if (realtimeStatus === 'disconnected' || realtimeStatus === 'error') {
             try {
+                log.log(`[VoiceTrace] start_attempt ${JSON.stringify({ sessionId, realtimeStatus })}`);
                 tracking?.capture('voice_mic_start_attempt', {
                     sessionId,
                     realtimeStatus,
@@ -441,18 +446,26 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
                 const initialPrompt = voiceHooks.onVoiceStarted(sessionId);
                 await startRealtimeSession(sessionId, initialPrompt);
+                log.log(`[VoiceTrace] start_finished ${JSON.stringify({ sessionId })}`);
                 tracking?.capture('voice_session_started', { sessionId });
             } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                log.log(`[VoiceTrace] start_error ${JSON.stringify({ sessionId, error: errorMessage })}`);
                 console.error('Failed to start realtime session:', error);
                 Modal.alert(t('common.error'), t('errors.voiceSessionFailed'));
-                tracking?.capture('voice_session_error', { error: error instanceof Error ? error.message : 'Unknown error' });
+                tracking?.capture('voice_session_error', { error: errorMessage });
             }
-        } else if (realtimeStatus === 'connected') {
+            return;
+        }
+
+        if (realtimeStatus === 'connected') {
+            log.log(`[VoiceTrace] stop_attempt ${JSON.stringify({ sessionId })}`);
             tracking?.capture('voice_mic_stop_attempt', {
                 sessionId,
             });
 
             await stopRealtimeSession();
+            log.log(`[VoiceTrace] stop_finished ${JSON.stringify({ sessionId })}`);
             tracking?.capture('voice_session_stopped');
 
             // Notify voice assistant about voice session stop
