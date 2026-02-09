@@ -50,6 +50,15 @@ type ImageUploadProgress = {
     total: number;
 };
 
+function normalizeSlashCommand(input: string): string {
+    return input.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isPlanModeSlashCommand(input: string): boolean {
+    const normalized = normalizeSlashCommand(input);
+    return normalized === '/plan' || normalized === '/permission plan' || normalized === '/permissions plan';
+}
+
 export const SessionView = React.memo((props: { id: string }) => {
     const sessionId = props.id;
     const router = useRouter();
@@ -555,6 +564,14 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
                         const trimmedMessage = message.trim();
                         if (!trimmedMessage) {
+                            return;
+                        }
+
+                        // Local shortcut for enabling plan mode without sending a message.
+                        if (!isGeminiSession && isPlanModeSlashCommand(trimmedMessage)) {
+                            setMessage('');
+                            clearDraft();
+                            updatePermissionMode('plan');
                             return;
                         }
 

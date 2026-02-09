@@ -492,9 +492,16 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
             }
             // Handle Shift+Tab for permission mode switching
             if (event.key === 'Tab' && event.shiftKey && props.onPermissionModeChange) {
-                const modeOrder: PermissionMode[] = isCodex
+                if (isCodex) {
+                    const nextMode: PermissionMode = props.permissionMode === 'plan' ? 'default' : 'plan';
+                    props.onPermissionModeChange(nextMode);
+                    hapticsLight();
+                    return true; // Key was handled, prevent default tab behavior
+                }
+
+                const modeOrder: PermissionMode[] = isGemini
                     ? ['default', 'read-only', 'safe-yolo', 'yolo']
-                    : ['default', 'acceptEdits', 'plan', 'bypassPermissions']; // Claude and Gemini share same modes
+                    : ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
                 const currentIndex = modeOrder.indexOf(props.permissionMode || 'default');
                 const nextIndex = (currentIndex + 1) % modeOrder.length;
                 props.onPermissionModeChange(modeOrder[nextIndex]);
@@ -552,12 +559,15 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     <Text style={styles.overlaySectionTitle}>
                                         {isCodex ? t('agentInput.codexPermissionMode.title') : isGemini ? t('agentInput.geminiPermissionMode.title') : t('agentInput.permissionMode.title')}
                                     </Text>
-                                    {((isCodex || isGemini)
-                                        ? (['default', 'read-only', 'safe-yolo', 'yolo'] as const)
+                                    {(isCodex
+                                        ? (['default', 'plan', 'read-only', 'safe-yolo', 'yolo'] as const)
+                                        : isGemini
+                                            ? (['default', 'read-only', 'safe-yolo', 'yolo'] as const)
                                         : (['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const)
                                     ).map((mode) => {
                                         const modeConfig = isCodex ? {
                                             'default': { label: t('agentInput.codexPermissionMode.default') },
+                                            'plan': { label: t('agentInput.permissionMode.plan') },
                                             'read-only': { label: t('agentInput.codexPermissionMode.readOnly') },
                                             'safe-yolo': { label: t('agentInput.codexPermissionMode.safeYolo') },
                                             'yolo': { label: t('agentInput.codexPermissionMode.yolo') },
@@ -894,6 +904,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 }}>
                                     {isCodex ? (
                                         props.permissionMode === 'default' ? t('agentInput.codexPermissionMode.default') :
+                                            props.permissionMode === 'plan' ? t('agentInput.permissionMode.badgePlanMode') :
                                             props.permissionMode === 'read-only' ? t('agentInput.codexPermissionMode.badgeReadOnly') :
                                                 props.permissionMode === 'safe-yolo' ? t('agentInput.codexPermissionMode.badgeSafeYolo') :
                                                     props.permissionMode === 'yolo' ? t('agentInput.codexPermissionMode.badgeYolo') : ''

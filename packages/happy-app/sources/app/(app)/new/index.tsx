@@ -351,10 +351,13 @@ function NewSessionWizard() {
     const [permissionMode, setPermissionMode] = React.useState<PermissionMode>(() => {
         // Initialize with last used permission mode if valid, otherwise default to 'default'
         const validClaudeModes: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
-        const validCodexGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validCodexModes: PermissionMode[] = ['default', 'plan', 'read-only', 'safe-yolo', 'yolo'];
+        const validGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
 
         if (lastUsedPermissionMode) {
-            if ((agentType === 'codex' || agentType === 'gemini') && validCodexGeminiModes.includes(lastUsedPermissionMode as PermissionMode)) {
+            if (agentType === 'codex' && validCodexModes.includes(lastUsedPermissionMode as PermissionMode)) {
+                return lastUsedPermissionMode as PermissionMode;
+            } else if (agentType === 'gemini' && validGeminiModes.includes(lastUsedPermissionMode as PermissionMode)) {
                 return lastUsedPermissionMode as PermissionMode;
             } else if (agentType === 'claude' && validClaudeModes.includes(lastUsedPermissionMode as PermissionMode)) {
                 return lastUsedPermissionMode as PermissionMode;
@@ -709,11 +712,14 @@ function NewSessionWizard() {
     // Reset permission mode to 'default' when agent type changes and current mode is invalid for new agent
     React.useEffect(() => {
         const validClaudeModes: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
-        const validCodexGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validCodexModes: PermissionMode[] = ['default', 'plan', 'read-only', 'safe-yolo', 'yolo'];
+        const validGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
 
-        const isValidForCurrentAgent = (agentType === 'codex' || agentType === 'gemini')
-            ? validCodexGeminiModes.includes(permissionMode)
-            : validClaudeModes.includes(permissionMode);
+        const isValidForCurrentAgent = agentType === 'codex'
+            ? validCodexModes.includes(permissionMode)
+            : agentType === 'gemini'
+                ? validGeminiModes.includes(permissionMode)
+                : validClaudeModes.includes(permissionMode);
 
         if (!isValidForCurrentAgent) {
             setPermissionMode('default');
@@ -1874,6 +1880,7 @@ function NewSessionWizard() {
                                 {(agentType === 'codex'
                                     ? [
                                         { value: 'default' as PermissionMode, label: 'Default', description: 'Ask for permissions', icon: 'shield-outline' },
+                                        { value: 'plan' as PermissionMode, label: 'Plan', description: 'Plan before executing', icon: 'list-outline' },
                                         { value: 'read-only' as PermissionMode, label: 'Read Only', description: 'Read-only mode', icon: 'eye-outline' },
                                         { value: 'safe-yolo' as PermissionMode, label: 'Safe YOLO', description: 'Workspace write with approval', icon: 'shield-checkmark-outline' },
                                         { value: 'yolo' as PermissionMode, label: 'YOLO', description: 'Full access, skip permissions', icon: 'flash-outline' },
