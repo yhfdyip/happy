@@ -17,7 +17,6 @@ import { storage, useIsDataReady, useLocalSetting, useRealtimeStatus, useSession
 import { useSession } from '@/sync/storage';
 import { Session } from '@/sync/storageTypes';
 import { sync } from '@/sync/sync';
-import { DynamicModelOption, fetchCodexModelsForSession } from '@/sync/dynamicModels';
 import { t } from '@/text';
 import { tracking, trackMessageSent } from '@/track';
 import { isRunningOnMac } from '@/utils/platform';
@@ -186,14 +185,14 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const isCliOutdated = cliVersion && !isVersionSupported(cliVersion, MINIMUM_CLI_VERSION);
     const isAcknowledged = machineId && acknowledgedCliVersions[machineId] === cliVersion;
     const shouldShowCliWarning = isCliOutdated && !isAcknowledged;
-    // Get permission mode from session object, prefer live value from agentState if available
-    const permissionMode = session.agentState?.currentPermissionMode || session.permissionMode || 'default';
+    // Get permission mode from session object.
+    // Prefer locally selected mode so keyboard/UI switches have immediate visible feedback.
+    const permissionMode = session.permissionMode || session.agentState?.currentPermissionMode || 'default';
     // Get model mode from session object - Gemini/Codex sessions use explicit model defaults
     const flavor = session.metadata?.flavor;
     const isGeminiSession = flavor === 'gemini';
     const isCodexSession = flavor === 'codex';
     const modelMode = session.modelMode || (isGeminiSession ? 'gemini-2.5-pro' : 'default');
-    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>([]);
     const sessionStatus = useSessionStatus(session);
     const sessionUsage = useSessionUsage(sessionId);
     const alwaysShowContextSize = useSetting('alwaysShowContextSize');
@@ -384,32 +383,6 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         storage.getState().updateSessionModelMode(sessionId, mode);
     }, [sessionId]);
 
-    React.useEffect(() => {
-        if (!isCodexSession) {
-            return;
-        }
-
-        let cancelled = false;
-        const run = async () => {
-            try {
-                const models = await fetchCodexModelsForSession(sessionId);
-                if (!cancelled) {
-                    setCodexModels(models);
-                }
-            } catch {
-                if (!cancelled) {
-                    setCodexModels([]);
-                }
-            }
-        };
-
-        void run();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [isCodexSession, sessionId]);
-
     // Memoize header-dependent styles to prevent re-renders
     const headerDependentStyles = React.useMemo(() => ({
         contentContainer: {
@@ -528,7 +501,6 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 onPermissionModeChange={updatePermissionMode}
                 modelMode={modelMode as any}
                 onModelModeChange={updateModelMode as any}
-                codexModelOptions={codexModels}
             metadata={session.metadata}
             connectionStatus={{
                 text: sessionStatus.statusText,
@@ -557,14 +529,6 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
 
                         const trimmedMessage = message.trim();
                         if (!trimmedMessage) {
-                            return;
-                        }
-
-                        const lowerCommand = trimmedMessage.toLowerCase();
-                        if (isCodexSession && lowerCommand === '/plan') {
-                            storage.getState().updateSessionPermissionMode(sessionId, 'plan');
-                            setMessage('');
-                            clearDraft();
                             return;
                         }
 

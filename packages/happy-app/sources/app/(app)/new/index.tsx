@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { machineSpawnNewSession } from '@/sync/ops';
 import { Modal } from '@/modal';
 import { sync } from '@/sync/sync';
-import { DynamicModelOption, fetchCodexModelsForMachine } from '@/sync/dynamicModels';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { createWorktree } from '@/utils/createWorktree';
 import { getTempData, type NewSessionData } from '@/utils/tempDataStore';
@@ -351,10 +350,13 @@ function NewSessionWizard() {
     const [permissionMode, setPermissionMode] = React.useState<PermissionMode>(() => {
         // Initialize with last used permission mode if valid, otherwise default to 'default'
         const validClaudeModes: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
-        const validCodexGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validCodexModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
 
         if (lastUsedPermissionMode) {
-            if ((agentType === 'codex' || agentType === 'gemini') && validCodexGeminiModes.includes(lastUsedPermissionMode as PermissionMode)) {
+            if (agentType === 'codex' && validCodexModes.includes(lastUsedPermissionMode as PermissionMode)) {
+                return lastUsedPermissionMode as PermissionMode;
+            } else if (agentType === 'gemini' && validGeminiModes.includes(lastUsedPermissionMode as PermissionMode)) {
                 return lastUsedPermissionMode as PermissionMode;
             } else if (agentType === 'claude' && validClaudeModes.includes(lastUsedPermissionMode as PermissionMode)) {
                 return lastUsedPermissionMode as PermissionMode;
@@ -369,12 +371,15 @@ function NewSessionWizard() {
 
     const [modelMode, setModelMode] = React.useState<ModelMode>(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
+        const validCodexModes: ModelMode[] = ['default', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.2'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
         if (lastUsedModelMode) {
             if (agentType === 'codex') {
-                return lastUsedModelMode as ModelMode;
+                return validCodexModes.includes(lastUsedModelMode as ModelMode)
+                    ? lastUsedModelMode as ModelMode
+                    : 'default';
             } else if (agentType === 'claude' && validClaudeModes.includes(lastUsedModelMode as ModelMode)) {
                 return lastUsedModelMode as ModelMode;
             } else if (agentType === 'gemini' && validGeminiModes.includes(lastUsedModelMode as ModelMode)) {
@@ -383,7 +388,6 @@ function NewSessionWizard() {
         }
         return agentType === 'gemini' ? 'gemini-2.5-pro' : 'default';
     });
-    const [codexModels, setCodexModels] = React.useState<DynamicModelOption[]>([]);
 
     // Session details state
     const [selectedMachineId, setSelectedMachineId] = React.useState<string | null>(() => {
@@ -708,11 +712,14 @@ function NewSessionWizard() {
     // Reset permission mode to 'default' when agent type changes and current mode is invalid for new agent
     React.useEffect(() => {
         const validClaudeModes: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
-        const validCodexGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validCodexModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+        const validGeminiModes: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
 
-        const isValidForCurrentAgent = (agentType === 'codex' || agentType === 'gemini')
-            ? validCodexGeminiModes.includes(permissionMode)
-            : validClaudeModes.includes(permissionMode);
+        const isValidForCurrentAgent = agentType === 'codex'
+            ? validCodexModes.includes(permissionMode)
+            : agentType === 'gemini'
+                ? validGeminiModes.includes(permissionMode)
+                : validClaudeModes.includes(permissionMode);
 
         if (!isValidForCurrentAgent) {
             setPermissionMode('default');
@@ -722,7 +729,7 @@ function NewSessionWizard() {
     // Reset model mode when agent type changes to appropriate default
     React.useEffect(() => {
         const validClaudeModes: ModelMode[] = ['default', 'adaptiveUsage', 'sonnet', 'opus'];
-        const validCodexModes: ModelMode[] = ['default', ...codexModels.map((item) => item.id)] as ModelMode[];
+        const validCodexModes: ModelMode[] = ['default', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.2'];
         // Note: 'default' is NOT valid for Gemini - we want explicit model selection
         const validGeminiModes: ModelMode[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
@@ -745,33 +752,7 @@ function NewSessionWizard() {
                 setModelMode('default');
             }
         }
-    }, [agentType, codexModels, modelMode]);
-
-    React.useEffect(() => {
-        if (agentType !== 'codex' || !selectedMachineId) {
-            return;
-        }
-
-        let cancelled = false;
-        const run = async () => {
-            try {
-                const models = await fetchCodexModelsForMachine(selectedMachineId);
-                if (!cancelled) {
-                    setCodexModels(models);
-                }
-            } catch {
-                if (!cancelled) {
-                    setCodexModels([]);
-                }
-            }
-        };
-
-        void run();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [agentType, selectedMachineId]);
+    }, [agentType, modelMode]);
 
     // Scroll to section helpers - for AgentInput button clicks
     const scrollToSection = React.useCallback((ref: React.RefObject<View | Text | null>) => {
@@ -1212,7 +1193,6 @@ function NewSessionWizard() {
                                 onPermissionModeChange={handlePermissionModeChange}
                                 modelMode={modelMode}
                                 onModelModeChange={setModelMode}
-                                codexModelOptions={codexModels}
                                 connectionStatus={connectionStatus}
                                 machineName={selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host}
                                 onMachineClick={handleMachineClick}
@@ -1963,7 +1943,6 @@ function NewSessionWizard() {
                             onPermissionModeChange={handleAgentInputPermissionChange}
                             modelMode={modelMode}
                             onModelModeChange={setModelMode}
-                            codexModelOptions={codexModels}
                             connectionStatus={connectionStatus}
                             machineName={selectedMachine?.metadata?.displayName || selectedMachine?.metadata?.host}
                             onMachineClick={handleAgentInputMachineClick}

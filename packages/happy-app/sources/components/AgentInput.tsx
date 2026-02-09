@@ -23,7 +23,6 @@ import { t } from '@/text';
 import { Metadata } from '@/sync/storageTypes';
 import { AIBackendProfile, getProfileEnvironmentVariables, validateProfileForAgent } from '@/sync/settings';
 import { getBuiltInProfile } from '@/sync/profileUtils';
-import { DynamicModelOption } from '@/sync/dynamicModels';
 import { tracking } from '@/track';
 
 interface AgentInputProps {
@@ -45,7 +44,6 @@ interface AgentInputProps {
     onPermissionModeChange?: (mode: PermissionMode) => void;
     modelMode?: ModelMode;
     onModelModeChange?: (mode: ModelMode) => void;
-    codexModelOptions?: DynamicModelOption[];
     metadata?: Metadata | null;
     onAbort?: () => void | Promise<void>;
     showAbortButton?: boolean;
@@ -85,6 +83,27 @@ interface AgentInputProps {
 }
 
 const MAX_CONTEXT_SIZE = 190000;
+
+const CLAUDE_PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+const CODEX_PERMISSION_MODES: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+const GEMINI_PERMISSION_MODES: PermissionMode[] = ['default', 'read-only', 'safe-yolo', 'yolo'];
+const FIXED_CODEX_MODEL_OPTIONS = [
+    {
+        id: 'gpt-5.3-codex' as const,
+        label: 'GPT-5.3 Codex',
+        description: 'Latest Codex model',
+    },
+    {
+        id: 'gpt-5.2-codex' as const,
+        label: 'GPT-5.2 Codex',
+        description: 'Stable coding model',
+    },
+    {
+        id: 'gpt-5.2' as const,
+        label: 'GPT-5.2',
+        description: 'General GPT-5.2 model',
+    },
+];
 
 const stylesheet = StyleSheet.create((theme, runtime) => ({
     container: {
@@ -314,18 +333,53 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     // Use metadata.flavor for existing sessions, agentType prop for new sessions
     const isCodex = props.metadata?.flavor === 'codex' || props.agentType === 'codex';
     const isGemini = props.metadata?.flavor === 'gemini' || props.agentType === 'gemini';
+    const availablePermissionModes = React.useMemo(() => {
+        if (isCodex) return CODEX_PERMISSION_MODES;
+        if (isGemini) return GEMINI_PERMISSION_MODES;
+        return CLAUDE_PERMISSION_MODES;
+    }, [isCodex, isGemini]);
+    const currentPermissionMode = props.permissionMode || 'default';
+    const currentPermissionModeColor = React.useMemo(() => {
+        return currentPermissionMode === 'acceptEdits' ? theme.colors.permission.acceptEdits :
+            currentPermissionMode === 'bypassPermissions' ? theme.colors.permission.bypass :
+                currentPermissionMode === 'plan' ? theme.colors.permission.plan :
+                    currentPermissionMode === 'read-only' ? theme.colors.permission.readOnly :
+                        currentPermissionMode === 'safe-yolo' ? theme.colors.permission.safeYolo :
+                            currentPermissionMode === 'yolo' ? theme.colors.permission.yolo :
+                                theme.colors.textSecondary;
+    }, [currentPermissionMode, theme.colors.permission.acceptEdits, theme.colors.permission.bypass, theme.colors.permission.plan, theme.colors.permission.readOnly, theme.colors.permission.safeYolo, theme.colors.permission.yolo, theme.colors.textSecondary]);
+    const currentPermissionModeLabel = React.useMemo(() => {
+        if (isCodex) {
+            return currentPermissionMode === 'default' ? t('agentInput.codexPermissionMode.default') :
+                currentPermissionMode === 'plan' ? t('agentInput.permissionMode.badgePlanMode') :
+                    currentPermissionMode === 'read-only' ? t('agentInput.codexPermissionMode.badgeReadOnly') :
+                        currentPermissionMode === 'safe-yolo' ? t('agentInput.codexPermissionMode.badgeSafeYolo') :
+                            currentPermissionMode === 'yolo' ? t('agentInput.codexPermissionMode.badgeYolo') : '';
+        }
+
+        if (isGemini) {
+            return currentPermissionMode === 'default' ? t('agentInput.geminiPermissionMode.default') :
+                currentPermissionMode === 'read-only' ? t('agentInput.geminiPermissionMode.badgeReadOnly') :
+                    currentPermissionMode === 'safe-yolo' ? t('agentInput.geminiPermissionMode.badgeSafeYolo') :
+                        currentPermissionMode === 'yolo' ? t('agentInput.geminiPermissionMode.badgeYolo') : '';
+        }
+
+        return currentPermissionMode === 'default' ? t('agentInput.permissionMode.default') :
+            currentPermissionMode === 'acceptEdits' ? t('agentInput.permissionMode.badgeAcceptAllEdits') :
+                currentPermissionMode === 'bypassPermissions' ? t('agentInput.permissionMode.badgeBypassAllPermissions') :
+                    currentPermissionMode === 'plan' ? t('agentInput.permissionMode.badgePlanMode') : '';
+    }, [isCodex, isGemini, currentPermissionMode]);
     const canPickImage = !!props.sessionId && !!props.onPickImage && isCodex;
     const codexModelOptions = React.useMemo(() => {
-        const cliOptions = (props.codexModelOptions || []).filter((item) => item.id !== 'default');
         return [
             {
                 id: 'default',
                 label: t('agentInput.codexPermissionMode.default'),
                 description: t('agentInput.model.configureInCli'),
             },
-            ...cliOptions,
+            ...FIXED_CODEX_MODEL_OPTIONS,
         ];
-    }, [props.codexModelOptions]);
+    }, []);
 
     // Profile data
     const profiles = useSetting('profiles');
@@ -427,6 +481,17 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         // Don't close the settings overlay - let users see the change and potentially switch again
     }, [props.onPermissionModeChange]);
 
+    const handleCyclePermissionMode = React.useCallback(() => {
+        if (!props.onPermissionModeChange) {
+            return;
+        }
+
+        const currentIndex = availablePermissionModes.indexOf(currentPermissionMode);
+        const nextIndex = (currentIndex + 1) % availablePermissionModes.length;
+        props.onPermissionModeChange(availablePermissionModes[nextIndex]);
+        hapticsLight();
+    }, [props.onPermissionModeChange, availablePermissionModes, currentPermissionMode]);
+
     // Handle abort button press
     const handleAbortPress = React.useCallback(async () => {
         if (!props.onAbort) return;
@@ -497,19 +562,13 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
             }
             // Handle Shift+Tab for permission mode switching
             if (event.key === 'Tab' && event.shiftKey && props.onPermissionModeChange) {
-                const modeOrder: PermissionMode[] = isCodex
-                    ? ['default', 'read-only', 'safe-yolo', 'yolo']
-                    : ['default', 'acceptEdits', 'plan', 'bypassPermissions']; // Claude and Gemini share same modes
-                const currentIndex = modeOrder.indexOf(props.permissionMode || 'default');
-                const nextIndex = (currentIndex + 1) % modeOrder.length;
-                props.onPermissionModeChange(modeOrder[nextIndex]);
-                hapticsLight();
+                handleCyclePermissionMode();
                 return true; // Key was handled, prevent default tab behavior
             }
 
         }
         return false; // Key was not handled
-    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, hasSendPayload, props.onSend, props.permissionMode, props.onPermissionModeChange, props.isSending]);
+    }, [suggestions, moveUp, moveDown, selected, handleSuggestionSelect, props.showAbortButton, props.onAbort, isAborting, handleAbortPress, agentInputEnterToSend, hasSendPayload, props.onSend, props.onPermissionModeChange, props.isSending, handleCyclePermissionMode]);
 
 
 
@@ -557,10 +616,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     <Text style={styles.overlaySectionTitle}>
                                         {isCodex ? t('agentInput.codexPermissionMode.title') : isGemini ? t('agentInput.geminiPermissionMode.title') : t('agentInput.permissionMode.title')}
                                     </Text>
-                                    {((isCodex || isGemini)
-                                        ? (['default', 'read-only', 'safe-yolo', 'yolo'] as const)
-                                        : (['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const)
-                                    ).map((mode) => {
+                                    {availablePermissionModes.map((mode) => {
                                         const modeConfig = isCodex ? {
                                             'default': { label: t('agentInput.codexPermissionMode.default') },
                                             'read-only': { label: t('agentInput.codexPermissionMode.readOnly') },
@@ -888,31 +944,10 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             {props.permissionMode && (
                                 <Text style={{
                                     fontSize: 11,
-                                    color: props.permissionMode === 'acceptEdits' ? theme.colors.permission.acceptEdits :
-                                        props.permissionMode === 'bypassPermissions' ? theme.colors.permission.bypass :
-                                            props.permissionMode === 'plan' ? theme.colors.permission.plan :
-                                                props.permissionMode === 'read-only' ? theme.colors.permission.readOnly :
-                                                    props.permissionMode === 'safe-yolo' ? theme.colors.permission.safeYolo :
-                                                        props.permissionMode === 'yolo' ? theme.colors.permission.yolo :
-                                                            theme.colors.textSecondary, // Use secondary text color for default
+                                    color: currentPermissionModeColor,
                                     ...Typography.default()
                                 }}>
-                                    {isCodex ? (
-                                        props.permissionMode === 'default' ? t('agentInput.codexPermissionMode.default') :
-                                            props.permissionMode === 'read-only' ? t('agentInput.codexPermissionMode.badgeReadOnly') :
-                                                props.permissionMode === 'safe-yolo' ? t('agentInput.codexPermissionMode.badgeSafeYolo') :
-                                                    props.permissionMode === 'yolo' ? t('agentInput.codexPermissionMode.badgeYolo') : ''
-                                    ) : isGemini ? (
-                                        props.permissionMode === 'default' ? t('agentInput.geminiPermissionMode.default') :
-                                            props.permissionMode === 'read-only' ? t('agentInput.geminiPermissionMode.badgeReadOnly') :
-                                                props.permissionMode === 'safe-yolo' ? t('agentInput.geminiPermissionMode.badgeSafeYolo') :
-                                                    props.permissionMode === 'yolo' ? t('agentInput.geminiPermissionMode.badgeYolo') : ''
-                                    ) : (
-                                        props.permissionMode === 'default' ? t('agentInput.permissionMode.default') :
-                                            props.permissionMode === 'acceptEdits' ? t('agentInput.permissionMode.badgeAcceptAllEdits') :
-                                                props.permissionMode === 'bypassPermissions' ? t('agentInput.permissionMode.badgeBypassAllPermissions') :
-                                                    props.permissionMode === 'plan' ? t('agentInput.permissionMode.badgePlanMode') : ''
-                                    )}
+                                    {currentPermissionModeLabel}
                                 </Text>
                             )}
                         </View>
@@ -1228,6 +1263,39 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             )}
                                         </Pressable>
                                     </Shaker>
+                                )}
+
+                                {/* Permission mode cycle button (especially useful on mobile/native) */}
+                                {props.onPermissionModeChange && Platform.OS !== 'web' && (
+                                    <Pressable
+                                        onPress={handleCyclePermissionMode}
+                                        hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                                        style={(p) => ({
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            borderRadius: Platform.select({ default: 16, android: 20 }),
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 6,
+                                            justifyContent: 'center',
+                                            height: 32,
+                                            opacity: p.pressed ? 0.7 : 1,
+                                            gap: 6,
+                                        })}
+                                    >
+                                        <Ionicons
+                                            name="swap-horizontal"
+                                            size={15}
+                                            color={currentPermissionModeColor}
+                                        />
+                                        <Text style={{
+                                            fontSize: 12,
+                                            color: currentPermissionModeColor,
+                                            fontWeight: '600',
+                                            ...Typography.default('semiBold'),
+                                        }}>
+                                            {currentPermissionModeLabel}
+                                        </Text>
+                                    </Pressable>
                                 )}
 
                                 {/* Image upload (Codex only for now) */}

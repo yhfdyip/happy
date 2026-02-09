@@ -126,26 +126,6 @@ interface SessionKillResponse {
     message: string;
 }
 
-interface ListModelsRequest {
-    provider?: 'codex';
-    limit?: number;
-}
-
-export interface SessionModelItem {
-    id: string;
-    model: string;
-    displayName: string;
-    description: string;
-    isDefault: boolean;
-}
-
-interface ListModelsResponse {
-    success: boolean;
-    data?: SessionModelItem[];
-    source?: 'remote' | 'fallback';
-    error?: string;
-}
-
 // Response types for spawn session
 export type SpawnSessionResult =
     | { type: 'success'; sessionId: string }
@@ -250,28 +230,6 @@ export async function machineBash(
             stdout: '',
             stderr: error instanceof Error ? error.message : 'Unknown error',
             exitCode: -1
-        };
-    }
-}
-
-/**
- * List available models from a machine-level RPC.
- */
-export async function machineListModels(
-    machineId: string,
-    request: ListModelsRequest = { provider: 'codex' }
-): Promise<ListModelsResponse> {
-    try {
-        const response = await apiSocket.machineRPC<ListModelsResponse, ListModelsRequest>(
-            machineId,
-            'listModels',
-            request
-        );
-        return response;
-    } catch (error) {
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
         };
     }
 }
@@ -529,28 +487,6 @@ export async function sessionKill(sessionId: string): Promise<SessionKillRespons
         return {
             success: false,
             message: error instanceof Error ? error.message : 'Unknown error'
-        };
-    }
-}
-
-/**
- * List available models from a session-level RPC.
- */
-export async function sessionListModels(
-    sessionId: string,
-    request: ListModelsRequest = { provider: 'codex' }
-): Promise<ListModelsResponse> {
-    try {
-        const response = await apiSocket.sessionRPC<ListModelsResponse, ListModelsRequest>(
-            sessionId,
-            'listModels',
-            request
-        );
-        return response;
-    } catch (error) {
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
         };
     }
 }
