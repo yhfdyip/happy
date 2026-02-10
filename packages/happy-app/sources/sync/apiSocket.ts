@@ -19,6 +19,12 @@ export interface SyncSocketState {
 
 export type SyncSocketListener = (state: SyncSocketState) => void;
 
+type RpcCallAck = {
+    ok?: boolean;
+    result?: string;
+    error?: string;
+};
+
 //
 // Main Class
 //
@@ -120,12 +126,15 @@ class ApiSocket {
         const result = await this.socket!.emitWithAck('rpc-call', {
             method: `${sessionId}:${method}`,
             params: await sessionEncryption.encryptRaw(params)
-        });
+        }) as RpcCallAck;
         
         if (result.ok) {
+            if (!result.result) {
+                throw new Error('RPC response missing payload');
+            }
             return await sessionEncryption.decryptRaw(result.result) as R;
         }
-        throw new Error('RPC call failed');
+        throw new Error(this.getRpcErrorMessage(result));
     }
 
     /**
@@ -140,12 +149,15 @@ class ApiSocket {
         const result = await this.socket!.emitWithAck('rpc-call', {
             method: `${machineId}:${method}`,
             params: await machineEncryption.encryptRaw(params)
-        });
+        }) as RpcCallAck;
 
         if (result.ok) {
+            if (!result.result) {
+                throw new Error('RPC response missing payload');
+            }
             return await machineEncryption.decryptRaw(result.result) as R;
         }
-        throw new Error('RPC call failed');
+        throw new Error(this.getRpcErrorMessage(result));
     }
 
     send(event: string, data: any) {
@@ -252,6 +264,16 @@ class ApiSocket {
                 // console.log(`📥 SyncSocket: No handler registered for '${event}'`);
             }
         });
+    }
+
+    private getRpcErrorMessage(result: RpcCallAck): string {
+        if (typeof result.error === 'string') {
+            const message = result.error.trim();
+            if (message.length > 0) {
+                return message;
+            }
+        }
+        return 'RPC call failed';
     }
 }
 

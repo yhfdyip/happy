@@ -203,7 +203,17 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const [imageUploadProgress, setImageUploadProgress] = React.useState<ImageUploadProgress | null>(null);
     const isSendingMessageRef = React.useRef(false);
     const isSendingPlanShortcutRef = React.useRef(false);
-    const [planShortcutMode, setPlanShortcutMode] = React.useState<'default' | 'plan'>('default');
+    const [planShortcutMode, setPlanShortcutMode] = React.useState<'default' | 'plan'>(
+        session.agentState?.currentPlanMode === 'plan' ? 'plan' : 'default'
+    );
+
+    React.useEffect(() => {
+        if (!isCodexSession) {
+            setPlanShortcutMode('default');
+            return;
+        }
+        setPlanShortcutMode(session.agentState?.currentPlanMode === 'plan' ? 'plan' : 'default');
+    }, [isCodexSession, session.agentState?.currentPlanMode]);
 
     // Use draft hook for auto-saving message drafts
     const { clearDraft } = useDraft(sessionId, message, setMessage);

@@ -336,6 +336,7 @@ export type Metadata = {
 export type AgentState = {
   controlledByUser?: boolean | null | undefined
   currentPermissionMode?: PermissionMode
+  currentPlanMode?: 'default' | 'plan'
   requests?: {
     [id: string]: {
       tool: string,

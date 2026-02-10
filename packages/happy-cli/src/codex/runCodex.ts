@@ -69,6 +69,7 @@ export async function runCodex(opts: {
 }): Promise<void> {
     // Use shared PermissionMode type for cross-agent compatibility
     type PermissionMode = import('@/api/types').PermissionMode;
+    type PlanMode = 'default' | 'plan';
     type ImageAttachment = {
         type: 'image';
         path: string;
@@ -76,6 +77,7 @@ export async function runCodex(opts: {
     };
     interface EnhancedMode {
         permissionMode: PermissionMode;
+        planMode: PlanMode;
         model?: string;
     }
     type QueuedCodexMessage = {
@@ -163,12 +165,14 @@ export async function runCodex(opts: {
 
     const messageQueue = new MessageQueue2<EnhancedMode>((mode) => hashObject({
         permissionMode: mode.permissionMode,
+        planMode: mode.planMode,
         model: mode.model,
     }));
 
     // Track current overrides to apply per message
     // Use shared PermissionMode type from api/types for cross-agent compatibility
-    let currentPermissionMode: import('@/api/types').PermissionMode | undefined = undefined;
+    let currentPermissionMode: import('@/api/types').PermissionMode = 'default';
+    let currentPlanMode: PlanMode = 'default';
     let currentModel: string | undefined = undefined;
 
     const syncCurrentPermissionMode = (mode: import('@/api/types').PermissionMode) => {
@@ -178,16 +182,23 @@ export async function runCodex(opts: {
         }));
     };
 
+    const syncCurrentPlanMode = (mode: PlanMode) => {
+        session.updateAgentState((currentState) => ({
+            ...currentState,
+            currentPlanMode: mode,
+        }));
+    };
+
     session.onUserMessage((message) => {
         // Resolve permission mode (accept all modes, will be mapped in switch statement)
         let messagePermissionMode = currentPermissionMode;
         if (message.meta?.permissionMode) {
             messagePermissionMode = message.meta.permissionMode as import('@/api/types').PermissionMode;
             currentPermissionMode = messagePermissionMode;
-            syncCurrentPermissionMode(currentPermissionMode || 'default');
+            syncCurrentPermissionMode(currentPermissionMode);
             logger.debug(`[Codex] Permission mode updated from user message to: ${currentPermissionMode}`);
         } else {
-            logger.debug(`[Codex] User message received with no permission mode override, using current: ${currentPermissionMode ?? 'default (effective)'}`);
+            logger.debug(`[Codex] User message received with no permission mode override, using current: ${currentPermissionMode}`);
         }
 
         // Resolve model; explicit null resets to default (undefined)
@@ -201,7 +212,8 @@ export async function runCodex(opts: {
         }
 
         const enhancedMode: EnhancedMode = {
-            permissionMode: messagePermissionMode || 'default',
+            permissionMode: messagePermissionMode,
+            planMode: currentPlanMode,
             model: messageModel,
         };
         const attachments = message.meta?.attachments || [];
@@ -356,12 +368,12 @@ export async function runCodex(opts: {
     const hasTTY = process.stdout.isTTY && process.stdin.isTTY;
     let inkInstance: any = null;
 
-    const togglePlanDefaultMode = (source: 'hotkey' | 'rpc' = 'hotkey'): 'default' | 'plan' => {
-        const nextMode: 'default' | 'plan' = currentPermissionMode === 'plan' ? 'default' : 'plan';
-        currentPermissionMode = nextMode;
-        syncCurrentPermissionMode(nextMode);
-        messageBuffer.addMessage(`Mode switched: ${nextMode}`, 'status');
-        session.sendSessionEvent({ type: 'message', message: `Mode switched: ${nextMode}` });
+    const togglePlanDefaultMode = (source: 'hotkey' | 'rpc' = 'hotkey'): PlanMode => {
+        const nextMode: PlanMode = currentPlanMode === 'plan' ? 'default' : 'plan';
+        currentPlanMode = nextMode;
+        syncCurrentPlanMode(nextMode);
+        messageBuffer.addMessage(`Plan mode switched: ${nextMode}`, 'status');
+        session.sendSessionEvent({ type: 'message', message: `Plan mode switched: ${nextMode}` });
         logger.debug(`[codex]: ${source === 'hotkey' ? 'Shift+Tab' : 'RPC'} toggled mode to ${nextMode}`);
         return nextMode;
     };
@@ -773,6 +785,7 @@ export async function runCodex(opts: {
                         prompt: first ? parsedPayload.message + '\n\n' + CHANGE_TITLE_INSTRUCTION : parsedPayload.message,
                         sandbox,
                         'approval-policy': approvalPolicy,
+                        'include-plan-tool': message.mode.planMode === 'plan',
                         config: { mcp_servers: mcpServers }
                     };
                     if (parsedPayload.images.length > 0) {
