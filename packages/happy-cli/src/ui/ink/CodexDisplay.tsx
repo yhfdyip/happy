@@ -6,9 +6,15 @@ interface CodexDisplayProps {
     messageBuffer: MessageBuffer
     logPath?: string
     onExit?: () => void
+    onTogglePlanDefaultMode?: () => void
 }
 
-export const CodexDisplay: React.FC<CodexDisplayProps> = ({ messageBuffer, logPath, onExit }) => {
+export const CodexDisplay: React.FC<CodexDisplayProps> = ({
+    messageBuffer,
+    logPath,
+    onExit,
+    onTogglePlanDefaultMode,
+}) => {
     const [messages, setMessages] = useState<BufferedMessage[]>([])
     const [confirmationMode, setConfirmationMode] = useState<boolean>(false)
     const [actionInProgress, setActionInProgress] = useState<boolean>(false)
@@ -70,11 +76,28 @@ export const CodexDisplay: React.FC<CodexDisplayProps> = ({ messageBuffer, logPa
             return
         }
 
+        // Handle Shift+Tab (BackTab)
+        const isShiftTab = (key.tab && key.shift) || input === '\u001b[Z'
+        if (isShiftTab) {
+            if (confirmationMode) {
+                resetConfirmation()
+            }
+            onTogglePlanDefaultMode?.()
+            return
+        }
+
         // Any other key cancels confirmation
         if (confirmationMode) {
             resetConfirmation()
         }
-    }, [confirmationMode, actionInProgress, onExit, setConfirmationWithTimeout, resetConfirmation]))
+    }, [
+        confirmationMode,
+        actionInProgress,
+        onExit,
+        onTogglePlanDefaultMode,
+        setConfirmationWithTimeout,
+        resetConfirmation,
+    ]))
 
     const getMessageColor = (type: BufferedMessage['type']): string => {
         switch (type) {
@@ -160,7 +183,7 @@ export const CodexDisplay: React.FC<CodexDisplayProps> = ({ messageBuffer, logPa
                     ) : (
                         <>
                             <Text color="green" bold>
-                                🤖 Codex Agent Running • Ctrl-C to exit
+                                🤖 Codex Agent Running • Shift+Tab toggle plan/default • Ctrl-C exit
                             </Text>
                         </>
                     )}

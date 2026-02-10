@@ -335,6 +335,7 @@ export type Metadata = {
 
 export type AgentState = {
   controlledByUser?: boolean | null | undefined
+  currentPermissionMode?: PermissionMode
   requests?: {
     [id: string]: {
       tool: string,

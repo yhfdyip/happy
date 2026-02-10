@@ -171,12 +171,20 @@ export async function runCodex(opts: {
     let currentPermissionMode: import('@/api/types').PermissionMode | undefined = undefined;
     let currentModel: string | undefined = undefined;
 
+    const syncCurrentPermissionMode = (mode: import('@/api/types').PermissionMode) => {
+        session.updateAgentState((currentState) => ({
+            ...currentState,
+            currentPermissionMode: mode,
+        }));
+    };
+
     session.onUserMessage((message) => {
         // Resolve permission mode (accept all modes, will be mapped in switch statement)
         let messagePermissionMode = currentPermissionMode;
         if (message.meta?.permissionMode) {
             messagePermissionMode = message.meta.permissionMode as import('@/api/types').PermissionMode;
             currentPermissionMode = messagePermissionMode;
+            syncCurrentPermissionMode(currentPermissionMode || 'default');
             logger.debug(`[Codex] Permission mode updated from user message to: ${currentPermissionMode}`);
         } else {
             logger.debug(`[Codex] User message received with no permission mode override, using current: ${currentPermissionMode ?? 'default (effective)'}`);
@@ -348,11 +356,29 @@ export async function runCodex(opts: {
     const hasTTY = process.stdout.isTTY && process.stdin.isTTY;
     let inkInstance: any = null;
 
+    const togglePlanDefaultMode = (source: 'hotkey' | 'rpc' = 'hotkey'): 'default' | 'plan' => {
+        const nextMode: 'default' | 'plan' = currentPermissionMode === 'plan' ? 'default' : 'plan';
+        currentPermissionMode = nextMode;
+        syncCurrentPermissionMode(nextMode);
+        messageBuffer.addMessage(`Mode switched: ${nextMode}`, 'status');
+        session.sendSessionEvent({ type: 'message', message: `Mode switched: ${nextMode}` });
+        logger.debug(`[codex]: ${source === 'hotkey' ? 'Shift+Tab' : 'RPC'} toggled mode to ${nextMode}`);
+        return nextMode;
+    };
+
+    session.rpcHandlerManager.registerHandler('togglePlanMode', async () => {
+        const mode = togglePlanDefaultMode('rpc');
+        return { mode };
+    });
+
     if (hasTTY) {
         console.clear();
         inkInstance = render(React.createElement(CodexDisplay, {
             messageBuffer,
             logPath: process.env.DEBUG ? logger.getLogPath() : undefined,
+            onTogglePlanDefaultMode: () => {
+                togglePlanDefaultMode('hotkey');
+            },
             onExit: async () => {
                 // Exit the agent
                 logger.debug('[codex]: Exiting agent via Ctrl-C');

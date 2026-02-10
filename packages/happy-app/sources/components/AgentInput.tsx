@@ -42,6 +42,8 @@ interface AgentInputProps {
     isMicActive?: boolean;
     permissionMode?: PermissionMode;
     onPermissionModeChange?: (mode: PermissionMode) => void;
+    planShortcutMode?: 'default' | 'plan';
+    onPlanShortcutToggle?: () => void | Promise<void>;
     modelMode?: ModelMode;
     onModelModeChange?: (mode: ModelMode) => void;
     metadata?: Metadata | null;
@@ -369,6 +371,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                 currentPermissionMode === 'bypassPermissions' ? t('agentInput.permissionMode.badgeBypassAllPermissions') :
                     currentPermissionMode === 'plan' ? t('agentInput.permissionMode.badgePlanMode') : '';
     }, [isCodex, isGemini, currentPermissionMode]);
+    const planShortcutMode = props.planShortcutMode || 'default';
+    const isPlanModeEnabled = planShortcutMode === 'plan';
+    const planShortcutLabel = isPlanModeEnabled ? 'plan' : 'default';
     const canPickImage = !!props.sessionId && !!props.onPickImage && isCodex;
     const codexModelOptions = React.useMemo(() => {
         return [
@@ -491,6 +496,15 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         props.onPermissionModeChange(availablePermissionModes[nextIndex]);
         hapticsLight();
     }, [props.onPermissionModeChange, availablePermissionModes, currentPermissionMode]);
+
+    const handlePlanModeToggle = React.useCallback(() => {
+        if (!props.onPlanShortcutToggle) {
+            return;
+        }
+
+        void props.onPlanShortcutToggle();
+        hapticsLight();
+    }, [props.onPlanShortcutToggle]);
 
     // Handle abort button press
     const handleAbortPress = React.useCallback(async () => {
@@ -1265,10 +1279,10 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     </Shaker>
                                 )}
 
-                                {/* Permission mode cycle button (especially useful on mobile/native) */}
-                                {props.onPermissionModeChange && Platform.OS !== 'web' && (
+                                {/* Plan mode toggle button */}
+                                {props.onPlanShortcutToggle && (
                                     <Pressable
-                                        onPress={handleCyclePermissionMode}
+                                        onPress={handlePlanModeToggle}
                                         hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
                                         style={(p) => ({
                                             flexDirection: 'row',
@@ -1279,21 +1293,15 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             justifyContent: 'center',
                                             height: 32,
                                             opacity: p.pressed ? 0.7 : 1,
-                                            gap: 6,
                                         })}
                                     >
-                                        <Ionicons
-                                            name="swap-horizontal"
-                                            size={15}
-                                            color={currentPermissionModeColor}
-                                        />
                                         <Text style={{
                                             fontSize: 12,
-                                            color: currentPermissionModeColor,
+                                            color: theme.colors.permission.plan,
                                             fontWeight: '600',
                                             ...Typography.default('semiBold'),
                                         }}>
-                                            {currentPermissionModeLabel}
+                                            {planShortcutLabel}
                                         </Text>
                                     </Pressable>
                                 )}

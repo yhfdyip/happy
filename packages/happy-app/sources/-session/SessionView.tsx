@@ -12,7 +12,7 @@ import { log } from '@/log';
 import { voiceHooks } from '@/realtime/hooks/voiceHooks';
 import { startRealtimeSession, stopRealtimeSession } from '@/realtime/RealtimeSession';
 import { gitStatusSync } from '@/sync/gitStatusSync';
-import { sessionAbort } from '@/sync/ops';
+import { sessionAbort, sessionTogglePlanMode } from '@/sync/ops';
 import { storage, useIsDataReady, useLocalSetting, useRealtimeStatus, useSessionMessages, useSessionUsage, useSetting } from '@/sync/storage';
 import { useSession } from '@/sync/storage';
 import { Session } from '@/sync/storageTypes';
@@ -202,6 +202,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
     const [isSendingMessage, setIsSendingMessage] = React.useState(false);
     const [imageUploadProgress, setImageUploadProgress] = React.useState<ImageUploadProgress | null>(null);
     const isSendingMessageRef = React.useRef(false);
+    const isSendingPlanShortcutRef = React.useRef(false);
+    const [planShortcutMode, setPlanShortcutMode] = React.useState<'default' | 'plan'>('default');
 
     // Use draft hook for auto-saving message drafts
     const { clearDraft } = useDraft(sessionId, message, setMessage);
@@ -378,6 +380,23 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
         storage.getState().updateSessionPermissionMode(sessionId, mode);
     }, [sessionId]);
 
+    const handlePlanShortcutToggle = React.useCallback(async () => {
+        if (isSendingMessageRef.current || isSendingPlanShortcutRef.current) {
+            return;
+        }
+        isSendingPlanShortcutRef.current = true;
+
+        try {
+            const result = await sessionTogglePlanMode(sessionId);
+            setPlanShortcutMode(result.mode);
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            Modal.alert(t('common.error'), `切换计划模式失败：${msg}`);
+        } finally {
+            isSendingPlanShortcutRef.current = false;
+        }
+    }, [sessionId]);
+
     // Function to update model mode
     const updateModelMode = React.useCallback((mode: string) => {
         storage.getState().updateSessionModelMode(sessionId, mode);
@@ -499,6 +518,8 @@ function SessionViewLoaded({ sessionId, session }: { sessionId: string, session:
                 uploadStatusText={uploadStatusText}
                 permissionMode={permissionMode}
                 onPermissionModeChange={updatePermissionMode}
+                planShortcutMode={isCodexSession ? planShortcutMode : undefined}
+                onPlanShortcutToggle={isCodexSession ? handlePlanShortcutToggle : undefined}
                 modelMode={modelMode as any}
                 onModelModeChange={updateModelMode as any}
             metadata={session.metadata}

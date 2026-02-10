@@ -39,6 +39,10 @@ interface SessionBashResponse {
     error?: string;
 }
 
+interface SessionTogglePlanModeResponse {
+    mode: 'default' | 'plan';
+}
+
 // Read file operation types
 interface SessionReadFileRequest {
     path: string;
@@ -356,6 +360,22 @@ export async function sessionBash(sessionId: string, request: SessionBashRequest
             exitCode: -1,
             error: error instanceof Error ? error.message : 'Unknown error'
         };
+    }
+}
+
+/**
+ * Toggle Codex plan/default mode directly in session process
+ */
+export async function sessionTogglePlanMode(sessionId: string): Promise<SessionTogglePlanModeResponse> {
+    try {
+        const response = await apiSocket.sessionRPC<SessionTogglePlanModeResponse, {}>(
+            sessionId,
+            'togglePlanMode',
+            {}
+        );
+        return response;
+    } catch (error) {
+        throw new Error(error instanceof Error ? error.message : 'Failed to toggle plan mode');
     }
 }
 
